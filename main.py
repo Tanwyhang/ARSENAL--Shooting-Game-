@@ -235,7 +235,7 @@ class Game:
 class Environment:
     def __init__(self):
         self.border_image = 0
-        self.sky_color = colors['green'][2]
+        self.sky_color = colors['green'][5]
         self.night_sky_color = colors['blue'][21]
         self.background_color = BLACK
         self.soil = basic_tile_image
@@ -272,7 +272,8 @@ class Environment:
                                            self.floor_modded + self.tile_width * s], 'soil'])
         
         # Initialize environment state
-        self.daynight_value = 10
+        self.current_day = 0 # start from zero since cutscene auto +1
+        self.daynight_value = 0
         self.daynight = math.sin(self.daynight_value)
         self.daynight_inverse = math.cos(self.daynight_value)
         
@@ -310,6 +311,139 @@ class Environment:
         self.sequence_target = None
         self.max_sequence = 10
 
+        # Cutscene settings
+        self.night_cutscene_activated = False
+        self.day_cutscene_activated = False
+
+
+        self.cutscene_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    
+    def play_day_cutscene(self):
+        cutscene_running = True
+        last_time = pygame.time.get_ticks()
+        cutscene_start_time = last_time
+
+        # Create text surfaces
+        self.current_day = getattr(self, 'current_day', 1) + 1  # Increment day counter
+        day_text = font.render(f"Day {self.current_day}", True, colors['blue'][2])
+        text_pos = [width/2 - day_text.get_width()/2, height/2 - day_text.get_height()/2]
+
+        # Timing constants 
+        FADE_IN_TIME = 60   # 1 second fade in
+        PAUSE_TIME = 60     # 1 second pause
+        FADE_OUT_TIME = 60  # 1 second fade out
+        TOTAL_TIME = FADE_IN_TIME + PAUSE_TIME + FADE_OUT_TIME
+
+        while cutscene_running and not self.day_cutscene_activated:
+            current_time = pygame.time.get_ticks()
+            cutscene_dt = (current_time - last_time) / 1000.0 * 60
+            last_time = current_time
+
+            # Handle events during cutscene
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    game.save_progress()
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        cutscene_running = False
+
+            # Clear screen
+            screen.fill(BLACK)
+
+            # Update elapsed time
+            elapsed_time = current_time - cutscene_start_time
+            frames_elapsed = elapsed_time / 16.67  # Convert to frames
+
+            # Calculate alpha based on phase
+            if frames_elapsed < FADE_IN_TIME:
+                # Fade in
+                alpha = int((frames_elapsed / FADE_IN_TIME) * 255)
+            elif frames_elapsed < FADE_IN_TIME + PAUSE_TIME:
+                # Hold
+                alpha = 255
+            elif frames_elapsed < TOTAL_TIME:
+                # Fade out
+                remaining = TOTAL_TIME - frames_elapsed
+                alpha = int((remaining / FADE_OUT_TIME) * 255)
+            else:
+                cutscene_running = False
+                self.day_cutscene_activated = True
+                break
+
+            # Draw text with current alpha
+            text_surface = pygame.Surface(day_text.get_size(), pygame.SRCALPHA)
+            text_surface.fill((255, 255, 255, alpha))
+            text_surface.blit(day_text, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            screen.blit(text_surface, text_pos)
+
+            pygame.display.update()
+            clock.tick(60)
+
+    
+    def play_night_cutscene(self):
+        cutscene_running = True
+        last_time = pygame.time.get_ticks()
+        cutscene_start_time = last_time
+
+        # Create text surface
+        text = font.render("Night Falls", True, colors['red'][3])
+        text_pos = [width/2 - text.get_width()/2, height/2 - text.get_height()/2]
+
+        # Timing constants 
+        FADE_IN_TIME = 60  # 1 second fade in
+        PAUSE_TIME = 60    # 1 second pause
+        FADE_OUT_TIME = 60 # 1 second fade out
+        TOTAL_TIME = FADE_IN_TIME + PAUSE_TIME + FADE_OUT_TIME
+
+        while cutscene_running and not self.night_cutscene_activated:
+            current_time = pygame.time.get_ticks()
+            cutscene_dt = (current_time - last_time) / 1000.0 * 60
+            last_time = current_time
+
+            # Handle events during cutscene
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    game.save_progress()
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        cutscene_running = False
+
+            # Clear screen
+            screen.fill(BLACK)
+
+            # Update elapsed time
+            elapsed_time = current_time - cutscene_start_time
+            frames_elapsed = elapsed_time / 16.67  # Convert to frames
+
+            # Calculate alpha based on phase
+            if frames_elapsed < FADE_IN_TIME:
+                # Fade in
+                alpha = int((frames_elapsed / FADE_IN_TIME) * 255)
+            elif frames_elapsed < FADE_IN_TIME + PAUSE_TIME:
+                # Hold
+                alpha = 255
+            elif frames_elapsed < TOTAL_TIME:
+                # Fade out
+                remaining = TOTAL_TIME - frames_elapsed
+                alpha = int((remaining / FADE_OUT_TIME) * 255)
+            else:
+                cutscene_running = False
+                self.night_cutscene_activated = True
+                break
+
+            # Draw text with current alpha
+            text_surface = pygame.Surface(text.get_size(), pygame.SRCALPHA)
+            text_surface.fill((255, 255, 255, alpha))
+            text_surface.blit(text, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            screen.blit(text_surface, text_pos)
+
+            pygame.display.update()
+            clock.tick(60)
+
 
     def update(self):
         self.game_time = 1
@@ -325,34 +459,50 @@ class Environment:
         self.daynight = math.sin(self.daynight_value)
         
         if self.daynight > 0:
+
+            # one-time activators
+            if self.night_cutscene_activated:
+                self.night_cutscene_activated = False
+                meteor_array.clear()
+
+            if not self.day_cutscene_activated:
+                self.play_day_cutscene()
  
-            c = []
-            for i in range(3):
-                s = hex_to_rgb(self.night_sky_color)[i] - hex_to_rgb(self.night_sky_color)[i] * self.daynight
-                s += hex_to_rgb(self.sky_color)[i] * self.daynight
-                c.append(max(0, min(255, int(s))))
-            self.background_color = rgb_to_hex(c)
+            self.background_color = self.sky_color
             
             if len(mushroom_array) < self.mushroom_counts:
                 self.mushroom_ticker += 1 * dt
+
             if self.mushroom_ticker > self.mushroom_spawn_cd:
                 self.spawn_mushrooms()
                 self.mushroom_ticker = 0
             self.mountains = mountain_image
+
             if not self.daynight_tswitch:
                 self.flash_in()
                 self.maintiles = [self.grass, self.soil]
-            self.daynight_tswitch = True
+                self.daynight_tswitch = True
+
         else:
+
+
+            if self.day_cutscene_activated:
+                self.day_cutscene_activated = False
+
+            if not self.night_cutscene_activated:
+                self.play_night_cutscene()
+                
+
+            self.background_color = self.night_sky_color
             # Regular meteor spawning
-            self.meteor_timer += dt
+            self.meteor_timer += dt * environment.game_time
             if self.meteor_timer >= self.meteor_spawn_rate:
                 self.meteor_timer = 0
                 meteor_array.append(Meteor())
 
             # Sequence attack handling
             if self.sequence_active:
-                self.sequence_timer += dt
+                self.sequence_timer += dt * environment.game_time
                 if self.sequence_timer >= self.sequence_interval:
                     self.sequence_timer = 0
                     self.spawn_sequence_meteor()
@@ -388,10 +538,11 @@ class Environment:
                     i.end()
                     self.mushroom_die_ticker = 0
             self.mountains = mountain_image_night
+            
             if self.daynight_tswitch:
                 self.fade_in()
                 self.maintiles = [self.grass_night, self.soil_night]
-            self.daynight_tswitch = False
+                self.daynight_tswitch = False
 
     def render(self):
         screen.fill(self.background_color)
@@ -759,7 +910,7 @@ class Meteor:
 
         # Add these new attributes for destruction sequence
         self.has_hit_player = False  # Add this to track if already hit player
-        self.hit_radius = self.width/3  # Adjust this value to change hit detection area
+        self.hit_radius = self.width * 0.5  # Adjust this value to change hit detection area
 
         if target_pos and is_targeted:
             # All meteors aim for same target point
@@ -877,6 +1028,7 @@ class Meteor:
                 player.take_damage(self.damage)
                 self.has_hit_player = True
                 self.create_explosion()
+                screen_shake(160)
                 
                 return True
 
@@ -1703,6 +1855,7 @@ effects_array = [killstreak]
 
 
 player.weapons = [Stargazer(), Shotgun()]
+
 environment = Environment()
 weapon = player.weapons[player.current_weapon]
 environment.fade_in()

@@ -273,7 +273,7 @@ class Environment:
         
         # Initialize environment state
         self.current_day = 0 # start from zero since cutscene auto +1
-        self.daynight_value = 0
+        self.daynight_value = 4
         self.daynight = math.sin(self.daynight_value)
         self.daynight_inverse = math.cos(self.daynight_value)
         
@@ -299,7 +299,7 @@ class Environment:
             self.spawn_mushrooms()
         
         self.meteor_timer = 0
-        self.meteor_spawn_rate = 40
+        self.meteor_spawn_rate = 20
         self.targeted_attack_timer = 0
         self.targeted_attack_rate = 300
         self.targeted_attack_count = 10
@@ -460,15 +460,17 @@ class Environment:
         
         if self.daynight > 0:
 
-            # one-time activators
+            # set false for next cutscene
             if self.night_cutscene_activated:
                 self.night_cutscene_activated = False
-                meteor_array.clear()
-
+            
+            # one time activator
             if not self.day_cutscene_activated:
+                meteor_array.clear()
+                self.background_color = self.sky_color
+                self.mountains = mountain_image
                 self.play_day_cutscene()
- 
-            self.background_color = self.sky_color
+                
             
             if len(mushroom_array) < self.mushroom_counts:
                 self.mushroom_ticker += 1 * dt
@@ -476,7 +478,6 @@ class Environment:
             if self.mushroom_ticker > self.mushroom_spawn_cd:
                 self.spawn_mushrooms()
                 self.mushroom_ticker = 0
-            self.mountains = mountain_image
 
             if not self.daynight_tswitch:
                 self.flash_in()
@@ -485,20 +486,25 @@ class Environment:
 
         else:
 
-
+            # set false for next cutscene
             if self.day_cutscene_activated:
                 self.day_cutscene_activated = False
 
+            # one time activator
             if not self.night_cutscene_activated:
+                self.background_color = self.night_sky_color
+                self.mountains = mountain_image_night
                 self.play_night_cutscene()
-                
+            
+            '''
 
-            self.background_color = self.night_sky_color
             # Regular meteor spawning
+            # NEED PERFORMANCE IMPROVEMENT, NOT RENDER PROBLEM BUT DATA LOAD CALCULATED OUTSIDE OF VISIBLE RANGE IS DRAGGING PERFORMANCE
             self.meteor_timer += dt * environment.game_time
             if self.meteor_timer >= self.meteor_spawn_rate:
                 self.meteor_timer = 0
                 meteor_array.append(Meteor())
+            '''
 
             # Sequence attack handling
             if self.sequence_active:
@@ -524,25 +530,27 @@ class Environment:
                 
             else:
                 self.targeted_attack_timer += dt
-
-            self.daynight_inverse = math.cos(self.daynight_value)
-            self.background_color = self.night_sky_color
-
+            
+            # kill mushrooms area 1
             self.mushroom_die_ticker += 1 * dt
             for i in mushroom_array:
                 if self.mushroom_die_ticker > self.mushroom_die_cd:
                     i.end()
                     self.mushroom_die_ticker = 0
+
+            # kill mushrooms area 2
             for i in mushroom_array_2:
                 if self.mushroom_die_ticker > self.mushroom_die_cd:
                     i.end()
                     self.mushroom_die_ticker = 0
-            self.mountains = mountain_image_night
             
             if self.daynight_tswitch:
                 self.fade_in()
                 self.maintiles = [self.grass_night, self.soil_night]
                 self.daynight_tswitch = False
+            
+            
+            self.daynight_inverse = math.cos(self.daynight_value)
 
     def render(self):
         screen.fill(self.background_color)
@@ -919,7 +927,7 @@ class Meteor:
             
             # Calculate spawn position along a line
             spawn_distance = 1000  # Distance from target to first spawn point
-            spawn_angle = math.pi/5  # 60 degrees - adjust for steepness
+            spawn_angle = random.choice((math.pi * 1/2, math.pi * 1/3 / 1.2, math.pi * 2/3 * 1.2))  # degrees: 90, 60, 120 steepened
             
             # Space meteors along the line based on index
             self.pos = [
@@ -1001,9 +1009,9 @@ class Meteor:
             effects_array.append(GlowingParticles(
                 self.pos,
                 count=1,
-                size=10,
-                color=[255, 120 + random.randint(0, 50), 0],
-                speed=0.2,
+                size=15,
+                color="#d20d15",
+                speed=0.5,
                 size_change=5,
                 gravity=False
             ))
@@ -1614,14 +1622,16 @@ class GlowingParticles:
         velocity = 1
         size = 2
         color = 3
+
+        
         
         # If no particles left, remove effect from effects_array
         if not self.particles:
             effects_array.remove(self)
             return True
         
-        for i in self.particles[:]:
-            # Update position (identical to original)
+        for i in self.particles[:]:  # Create a copy for safe iteration
+            # Update position
             i[position][x] += i[velocity][x] * dt
             i[position][y] += i[velocity][y] * dt
             i[size] -= height / 5000 * self.sc * dt
@@ -1635,24 +1645,36 @@ class GlowingParticles:
             elif i[size] <= 0.1:
                 self.particles.remove(i)
             else:
-                # Draw glow (larger, semi-transparent circle)
+                # Create single surface for both circles
                 glow_surface = pygame.Surface((int(i[size] * 3), int(i[size] * 3)), pygame.SRCALPHA)
                 
-                # Outer glow
-                glow_color = (*i[color][:3], 30)  # Low alpha for outer glow
-                pygame.draw.circle(glow_surface, glow_color, 
-                                (int(i[size] * 1.5), int(i[size] * 1.5)), 
-                                int(i[size] * 1.5))
+                # Calculate color that's 20% closer to white for main circle
+                main_color = []
+                for c in i[color][:3]:
+                    # Lerp 20% towards white (255)
+                    whitened = int(c + (255 - c) * 0.5)  # Move 20% of the distance to white
+                    main_color.append(whitened)
                 
-                # Main particle
-                pygame.draw.circle(glow_surface, i[color],
-                                (int(i[size] * 1.5), int(i[size] * 1.5)), 
-                                i[size])
+                # Draw outer glow
+                glow_color = (*i[color][:3], 5)  # Low alpha for outer glow
+                pygame.draw.circle(glow_surface, glow_color,
+                                (int(i[size] * 1.5), int(i[size] * 1.5)),
+                                int(i[size] * 1.2))
                 
-                # Blit the combined surface
-                screen.blit(glow_surface, 
-                        (i[position][x] + offset[x] - i[size] * 1.5,
-                            i[position][y] + offset[y] - i[size] * 1.5))
+                # Draw main particle with brightened color
+                pygame.draw.circle(glow_surface, (*main_color, 255),
+                                (int(i[size] * 1.5), int(i[size] * 1.5)),
+                                i[size] * 0.7)
+                
+                # small inner circle as white core
+                pygame.draw.circle(glow_surface, (*WHITE, 255),
+                                (int(i[size] * 1.5), int(i[size] * 1.5)),
+                                i[size] * 0.45)
+                
+                # Blit the combined surface with blend
+                screen_x = i[position][x] + offset[x] - i[size] * 1.5
+                screen_y = i[position][y] + offset[y] - i[size] * 1.5
+                screen.blit(glow_surface, (screen_x, screen_y), special_flags=pygame.BLEND_RGB_ADD)
         
         return False
 

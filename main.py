@@ -273,7 +273,7 @@ class Environment:
         
         # Initialize environment state
         self.current_day = 0 # start from zero since cutscene auto +1
-        self.daynight_value = 4
+        self.daynight_value = 5
         self.daynight = math.sin(self.daynight_value)
         self.daynight_inverse = math.cos(self.daynight_value)
         
@@ -1009,10 +1009,10 @@ class Meteor:
             effects_array.append(GlowingParticles(
                 self.pos,
                 count=1,
-                size=15,
-                color="#d20d15",
-                speed=0.5,
-                size_change=5,
+                size=16,
+                color="#e02a31",
+                speed=0.2,
+                size_change=3,
                 gravity=False
             ))
 
@@ -1440,30 +1440,35 @@ class Bullet:
             screen_shake(self.shake)
 
 class Explosion:
+    def hex_to_rgb(self, hex_color):
+        if isinstance(hex_color, list) and len(hex_color) == 3:
+            return hex_color
+        hex_color = hex_color.lstrip('#')
+        return [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
+
     def __init__(self, pos, color_base=[255, 255, 255], count=5, size=1, angle=1):
         self.pos = pos
         self.size = size
         self.particles = []
         self.angle = angle
         
+        # Convert color to RGB
+        color_base_rgb = self.hex_to_rgb(color_base)
+        
         for i in range(count):
             subbed = random.randint(0, 70)
-            
-            # Convert base color to RGB if it's a hex string
-            color_base_rgb = hex_to_rgb(color_base) if isinstance(color_base, str) else color_base
-            
             particle_size = random.randint(int(width * 0.008 * self.size),
-                                         int(width * 0.03 * self.size * self.size))
+                                       int(width * 0.03 * self.size * self.size))
             
             self.particles.append([
                 [pos[x], pos[y]],  # Position
                 [random.randint(int(-width / 200), int(width / 200)),  # Velocity X
                  random.randint(int(-height / 200), int(height / 200))],  # Velocity Y
                 particle_size,  # Size
-                [max(0, min(255, abs(color_base_rgb[0] - subbed))),  # Color with variation
-                 max(0, min(255, abs(color_base_rgb[1] - subbed))),
+                [max(0, min(255, abs(color_base_rgb[0] - subbed))), 
+                 max(0, min(255, abs(color_base_rgb[1] - subbed))), 
                  max(0, min(255, abs(color_base_rgb[2] - subbed))),
-                 255]  # Full alpha for main particle
+                 255]  # Color with alpha
             ])
 
     def render(self):
@@ -1471,45 +1476,60 @@ class Explosion:
         velocity = 1
         size = 2
         color = 3
-        
-        # If no particles left, remove effect from effects_array
+
         if not self.particles:
             effects_array.remove(self)
             return True
-            
-        for i in self.particles[:]:  # Create a copy for safe iteration
+        
+        for i in self.particles[:]:
             # Update position
             i[position][x] += i[velocity][x] * self.angle * dt
             i[position][y] += i[velocity][y] * self.angle * dt
             i[size] -= height / 1000 * dt
             
-            if i[size] <= 0:
+            if i[size] <= 0.1:
                 self.particles.remove(i)
             else:
-                # Create surface for the glowing particle
-                glow_surface = pygame.Surface((int(i[size] * 3), int(i[size] * 3)), pygame.SRCALPHA)
+                # Pixelation factor
+                pixel_scale = 3
                 
-                # Draw outer glow (larger, very transparent)
-                glow_color = (*i[color][:3], 30)  # Low alpha for outer glow
-                pygame.draw.circle(glow_surface, glow_color,
-                                (int(i[size] * 1.5), int(i[size] * 1.5)),
-                                int(i[size] * 1.5))
+                # Create smaller surface first
+                small_size = max(1, int(i[size] * 3 / pixel_scale))
+                small_surface = pygame.Surface((small_size, small_size), pygame.SRCALPHA)
                 
-                # Draw middle glow (medium transparency)
-                middle_color = (*i[color][:3], 180)  # Medium alpha for middle glow
-                pygame.draw.circle(glow_surface, middle_color,
-                                (int(i[size] * 1.5), int(i[size] * 1.5)),
-                                int(i[size] * 1.2))
+                # Calculate scaled positions and sizes
+                small_center = small_size / 2
+                small_outer = max(1, int(i[size] * 1.27 / pixel_scale))
+                small_main = max(1, int(i[size] * 0.6 / pixel_scale))
+                small_core = max(1, int(i[size] * 0.2 / pixel_scale))
                 
-                # Draw main particle
-                pygame.draw.circle(glow_surface, i[color],
-                                (int(i[size] * 1.5), int(i[size] * 1.5)),
-                                i[size])
+                # Calculate colors
+                main_color = []
+                for c in i[color][:3]:
+                    whitened = int(c + (255 - c) * 0.45)
+                    main_color.append(whitened)
                 
-                # Blit the combined surface
-                screen.blit(glow_surface,
-                        (i[position][x] + offset[x] - i[size] * 1.5,
-                            i[position][y] + offset[y] - i[size] * 1.5))
+                # Draw on small surface
+                pygame.draw.circle(small_surface, (*i[color][:3], 5),
+                                (small_center, small_center),
+                                small_outer)
+                
+                pygame.draw.circle(small_surface, (*main_color, 20),
+                                (small_center, small_center),
+                                small_main)
+                
+                pygame.draw.circle(small_surface, (*WHITE, 255),
+                                (small_center, small_center),
+                                small_core)
+                
+                # Scale up to final size
+                final_size = int(i[size] * 3)
+                glow_surface = pygame.transform.scale(small_surface, (final_size, final_size))
+                
+                # Blit with blend
+                screen_x = i[position][x] + offset[x] - i[size] * 1.5
+                screen_y = i[position][y] + offset[y] - i[size] * 1.5
+                screen.blit(glow_surface, (screen_x, screen_y), special_flags=pygame.BLEND_RGB_ADD)
         
         return False
 
@@ -1623,8 +1643,10 @@ class GlowingParticles:
         size = 2
         color = 3
 
-        
-        
+        WANDER_STRENGTH = height / 2000  # Strength of wandering motion
+        WANDER_FREQUENCY = 0.1  # How often direction changes
+        AIR_RESISTANCE = 0.99  # For smooth deceleration
+
         # If no particles left, remove effect from effects_array
         if not self.particles:
             effects_array.remove(self)
@@ -1637,7 +1659,29 @@ class GlowingParticles:
             i[size] -= height / 5000 * self.sc * dt
             
             if self.gravity:
-                i[position][y] += height / 500 * dt
+                # Apply gravity acceleration to Y velocity
+                i[velocity][y] += GRAVITY_ACCEL * dt
+                
+                # Apply air resistance
+                i[velocity][y] *= AIR_RESISTANCE
+                i[velocity][x] *= AIR_RESISTANCE
+                
+                # Limit to terminal velocity
+                if i[velocity][y] > TERMINAL_VELOCITY:
+                    i[velocity][y] = TERMINAL_VELOCITY
+            
+            # Add wandering motion using sine waves
+            time_offset = pygame.time.get_ticks() * WANDER_FREQUENCY
+            i[velocity][x] += math.sin(time_offset + i[position][y] * 0.1) * WANDER_STRENGTH * dt
+            i[velocity][y] += math.cos(time_offset + i[position][x] * 0.1) * WANDER_STRENGTH * dt
+            
+            # Apply air resistance for smooth motion
+            i[velocity][x] *= AIR_RESISTANCE
+            i[velocity][y] *= AIR_RESISTANCE
+            
+            # Add slight random drift
+            i[velocity][x] += (random.random() - 0.5) * WANDER_STRENGTH * dt
+            i[velocity][y] += (random.random() - 0.5) * WANDER_STRENGTH * dt
             
             if not 0 < i[position][x] + offset[x] < width or not 0 < i[position][y] + offset[y] < height:
                 effects_array.remove(self)
@@ -1645,31 +1689,41 @@ class GlowingParticles:
             elif i[size] <= 0.1:
                 self.particles.remove(i)
             else:
-                # Create single surface for both circles
-                glow_surface = pygame.Surface((int(i[size] * 3), int(i[size] * 3)), pygame.SRCALPHA)
+                # Pixelation factor (higher = more pixelated)
+                pixel_scale = 3  # You can adjust this value
                 
-                # Calculate color that's 20% closer to white for main circle
+                # Create smaller surface first
+                small_size = max(1, int(i[size] * 3 / pixel_scale))
+                small_surface = pygame.Surface((small_size, small_size), pygame.SRCALPHA)
+                
+                # Calculate scaled positions and sizes for the small surface
+                small_center = small_size / 2
+                small_outer = max(1, int(i[size] * 1.27 / pixel_scale))
+                small_main = max(1, int(i[size] * 0.6 / pixel_scale))
+                small_core = max(1, int(i[size] * 0.2 / pixel_scale))
+                
+                # Calculate colors
                 main_color = []
                 for c in i[color][:3]:
-                    # Lerp 20% towards white (255)
-                    whitened = int(c + (255 - c) * 0.5)  # Move 20% of the distance to white
+                    whitened = int(c + (255 - c) * 0.45)
                     main_color.append(whitened)
                 
-                # Draw outer glow
-                glow_color = (*i[color][:3], 5)  # Low alpha for outer glow
-                pygame.draw.circle(glow_surface, glow_color,
-                                (int(i[size] * 1.5), int(i[size] * 1.5)),
-                                int(i[size] * 1.2))
+                # Draw on small surface
+                pygame.draw.circle(small_surface, (*i[color][:3], 5),
+                                (small_center, small_center),
+                                small_outer)
                 
-                # Draw main particle with brightened color
-                pygame.draw.circle(glow_surface, (*main_color, 255),
-                                (int(i[size] * 1.5), int(i[size] * 1.5)),
-                                i[size] * 0.7)
+                pygame.draw.circle(small_surface, (*main_color, 20),
+                                (small_center, small_center),
+                                small_main)
                 
-                # small inner circle as white core
-                pygame.draw.circle(glow_surface, (*WHITE, 255),
-                                (int(i[size] * 1.5), int(i[size] * 1.5)),
-                                i[size] * 0.45)
+                pygame.draw.circle(small_surface, (*WHITE, 255),
+                                (small_center, small_center),
+                                small_core)
+                
+                # Scale up to final size
+                final_size = int(i[size] * 3)
+                glow_surface = pygame.transform.scale(small_surface, (final_size, final_size))
                 
                 # Blit the combined surface with blend
                 screen_x = i[position][x] + offset[x] - i[size] * 1.5

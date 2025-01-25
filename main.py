@@ -127,16 +127,26 @@ shotgun_image = load_game_image('weapon-shotgun.png')
 stargazer_bullet_image = load_game_image('bullet-stargazer.png', [width / 30, width / 30])
 shotgun_bullet_image = load_game_image('bullet-shotgun.png', [width / 30, width / 30])
 player_image = load_game_image('player.png', [width / 10, width / 10])
+
+# width/height = k
+# width * 0.5 / height * 0.5 = k
+# 
+game_logo_image = load_game_image('logo.png')
+
+# hip calculation for weapon placement
 hip = player_image.get_height() * 0.65
 
-# Tile images
+# env images
 basic_tile_image = load_game_image('tile-basic.png', [width / 10, width / 10], False)
 basic_tile_image_night = load_game_image('tile-basic-night.png', [width / 10, width / 10], False)
 grass_tile_image = load_game_image('tile-grass.png', [width / 10, width / 10])
 grass_tile_image_night = load_game_image('tile-grass-night.png', [width / 10, width / 10])
-mushroom_image_idle = load_game_image('mushroom-idle.png', [width / 10, width / 10])
-mountain_image = load_game_image('mountains.png', monitor_size)
+
 mountain_image_night = load_game_image('mountains-night.png', monitor_size)
+mountain_image = load_game_image('mountains.png', monitor_size)
+
+# entity images
+mushroom_image_idle = load_game_image('mushroom-idle.png', [width / 14, width / 14])
 
 # Load sounds
 shoot_sound = pygame.mixer.Sound('assets\\sound-shoot.wav')
@@ -145,7 +155,12 @@ select_sound = pygame.mixer.Sound('assets\\sound-select.wav')
 hit_sound = pygame.mixer.Sound('assets\\sound-hit.wav')
 die_sound = pygame.mixer.Sound('assets\\sound-die.wav')
 
-# Create fade effects
+# soundtrack
+music_shroom = os.path.join('assets', 'shroom.mp3')
+music_forest = ...
+music_nightfalls  = ...
+
+# Create fade effects (caching)
 fades = []
 blacksurf = pygame.Surface(monitor_size)
 blacksurf.fill(BLACK)
@@ -158,6 +173,19 @@ for i in range(255):
     whitesurf.set_alpha(i)
     fades.append(blacksurf.copy())
     flashes.append(whitesurf.copy())
+
+def play_music(path):
+    # bug fixing here
+    pygame.mixer.music.stop()
+    pygame.mixer.music.unload()
+    pygame.mixer.music.load(path)
+    pygame.mixer.music.play(-1, 0, fade_ms=1500)
+
+def play_music_long_fade(path):
+    pygame.mixer.music.unload()
+    pygame.mixer.music.load(path)
+    pygame.mixer.music.play(-1, fade_ms=10000)
+
 
 def delta_to_modifier(delta):
     return delta / 1000 * 60
@@ -193,6 +221,271 @@ def draw_bar(pos, a, b, size=1, color=colors['red'][19], border=1, line=False):
                            [pos[x] + n * (1 + i), pos[y] + height / 50 * size - 2.5 * border],
                            1 + int(7 / b))
 
+
+class SplashScreen:
+   def __init__(self):
+       self.image = game_logo_image
+       self.image = pygame.transform.scale(self.image, [width * 0.6, (width * 0.6) / self.image.get_width() * self.image.get_height()])
+       self.alpha = 0
+       self.phase = "fade_in"
+       self.timer = 0
+       self.fade_speed = 2
+       self.pause_duration = 200  # 1 second at 60fps
+
+   def render(self):
+       if self.phase == "fade_in":
+           self.alpha = min(255, self.alpha + self.fade_speed)
+           if self.alpha >= 255:
+               self.phase = "pause"
+               
+       elif self.phase == "pause":
+           self.timer += 1
+           if self.timer >= self.pause_duration:
+               self.phase = "fade_out"
+               
+       elif self.phase == "fade_out":
+           self.alpha = max(0, self.alpha - self.fade_speed)
+           if self.alpha <= 0:
+               return True
+
+       self.image.set_alpha(self.alpha)
+       screen.blit(self.image, (width/2 - self.image.get_width()/2, height/2 - self.image.get_height()/2))
+       return False
+
+
+class LoreSequence:
+    def __init__(self):
+        self.lore_text = [
+    "In an age long forgotten, the world was bathed in eternal daylight, sustained",
+    "by ancient celestial crystals that hung in the sky like countless suns. These",
+    "radiant crystals were the lifeblood of the realm, their glow illuminating every",
+    "corner of the world, banishing shadows, and filling the air with an everlasting",
+    "warmth.",
+    "",
+    "The people of this land lived in harmony, thriving under the benevolent light",
+    "of the crystals. Their civilization blossomed, powered by the mystical energies",
+    "of these celestial relics. Weapons, tools, and technology—all advanced to",
+    "unparalleled heights, allowing them to forge an era of prosperity and peace.",
+    "The crystals became symbols of balance, unity, and hope, their presence woven",
+    "into the very fabric of life.",
+    "",
+    "But as with all things of great power, the allure of dominance and control",
+    "grew too strong to resist. Greed seeped into the hearts of some, and they",
+    "sought to exploit the boundless energy of the crystals for their own gain.",
+    "In their relentless ambition, they delved deep into forbidden knowledge,",
+    "attempting to harness the very essence of the crystals.",
+    "",
+    "This hubris came at a terrible cost. Their reckless actions disrupted the",
+    "delicate balance that had sustained the world for centuries. The once-stable",
+    "crystals fractured, their luminous brilliance dimmed, and chaos erupted across",
+    "the realm. One by one, the celestial crystals began to fall from the heavens,",
+    "their descent igniting the skies in fiery streaks of destruction.",
+    "",
+    "Now, these fallen crystals rain from the heavens as burning meteors, bringing",
+    "devastation in their wake. Each meteor carries immense power, its energy potent",
+    "enough to reshape the land upon impact. Mountains crumble, forests ignite, and",
+    "rivers boil as the world faces an unrelenting barrage of celestial fury.",
+    "",
+    "Yet, amidst the ashes of ruin, humanity endures. The survivors, hardened by",
+    "the trials of this new era, have learned to harness the power of the fallen",
+    "crystals. From their remains, they forge weapons of extraordinary strength—tools",
+    "capable of wielding the same energy that once sustained their world. These",
+    "weapons, known as Starforged Arms, have become the last hope for survival in",
+    "an ever-darkening reality.",
+    "",
+    "You are one of these survivors—a Starforged warrior. Your weapon, born from",
+    "the remnants of celestial destruction, is both a tool of survival and a symbol",
+    "of defiance against the calamity that threatens to consume everything. You walk",
+    "a perilous path, wielding the power of the stars themselves, yet aware of the",
+    "burden it carries.",
+    "",
+    "But with each passing night, the meteor showers grow more intense, their",
+    "brilliance masking a growing dread. Whispers ripple through the remnants of",
+    "civilization, speaking of something darker stirring in the endless void above.",
+    "An ancient force, perhaps older than the crystals themselves, watches from the",
+    "abyss, its presence palpable yet shrouded in mystery.",
+    "",
+    "Will you rise to confront this darkness, wielding the power of the stars to",
+    "become the salvation of your world? Or will you, too, fall like the countless",
+    "stars that once illuminated the skies, consumed by the very forces you seek to",
+    "conquer?",
+    "",
+    "The choice is yours, Starforged warrior. The fate of the world hangs in the",
+    "balance."
+]
+
+        
+        self.scroll_speed = 10
+        self.text_spacing = 60
+        self.fade_duration = 50
+        self.start_y = height * 0.7
+        self.current_time = 0
+        self.phase = "start"
+
+    def render(self, screen):
+        # Background effects
+        if self.phase == "start":
+            # Initialize fireflies in background
+            self.phase = "scrolling"
+
+        # Scroll text
+        current_y = self.start_y - (self.current_time * self.scroll_speed)
+        
+        for i, line in enumerate(self.lore_text):
+            # Calculate position and alpha
+            y_pos = current_y + (i * self.text_spacing)
+            
+            # Only render visible text
+            if height * 0.3 <= y_pos <= height:
+
+                # Calculate fade at top and bottom edges
+                distance_from_edge = min(abs(height * 0.3 - y_pos), height * 0.7 - y_pos)
+                fade_zone = 150
+                alpha = min(255, (distance_from_edge / fade_zone) * 255)
+                
+                font = pygame.font.Font(font_name, int(width/60))
+                text_surface = font.render(line, True, (255, 255, 255))
+                text_surface.set_alpha(int(alpha))
+                
+                # Center text horizontally
+                text_x = (width - text_surface.get_width()) // 2
+                screen.blit(text_surface, (text_x, y_pos))
+
+        self.current_time += 1
+
+        # Check if sequence is complete
+        if current_y + (len(self.lore_text) * self.text_spacing) < height * 0.3:
+            return True
+        return False
+
+
+class MainMenu:
+    def __init__(self):
+        self.background = pygame.transform.scale(mountain_image.copy(), (width * 1.2, height * (width * 1.2 / width)))
+        self.logo = game_logo_image  
+        self.button_image = mushroom_image_idle.copy()
+       
+        self.logo = pygame.transform.scale(self.logo, [width * 0.6, (width * 0.6) / self.logo.get_width() * self.logo.get_height()])
+        self.button_image = pygame.transform.scale(self.button_image, [width/5, height/5])
+
+        self.bg_pos_ori = [width/2 - self.background.get_width()/2, height*0.65 - self.background.get_height()/2]
+        self.logo_pos_ori = [width/2 - self.logo.get_width()/2, height/4]
+        self.button_pos_ori = [width/2 - self.button_image.get_width()/2, height*0.6]
+       
+        self.bg_pos = [width/2 - self.background.get_width()/2, height/2 - self.background.get_height()/2]
+        self.logo_pos = [width/2 - self.logo.get_width()/2, height/4]
+        self.button_pos = [width/2 - self.button_image.get_width()/2, height*0.6]
+       
+        self.button_alpha = 100
+        self.target_alpha = 100
+        self.hover_alpha = 255
+
+       # Initialize fade effects
+        self.fade_surfaces = []
+        fade_surface = pygame.Surface((width, height))
+        fade_surface.fill(BLACK)
+        for alpha in range(256):
+            fade_surf = fade_surface.copy()
+            fade_surf.set_alpha(alpha)
+            self.fade_surfaces.append(fade_surf)
+           
+        self.fade_alpha = 255
+        self.fading_in = True
+        self.fading_out = False
+        self.fade_in_speed = 3
+        self.fade_out_speed = 30
+        self.end_check = False
+
+        self.bg_offset = [0, 0]
+        self.logo_offset = [0, 0]
+        self.button_offset = [0, 0]
+
+
+    def render(self):
+        screen.fill(colors['green'][5])
+        screen.blit(self.background, self.bg_pos)
+        screen.blit(self.logo, self.logo_pos)
+       
+        mouse_pos = pygame.mouse.get_pos()        
+        self.offset = (mouse_pos[0] - width/2, mouse_pos[1] - height /2)
+
+        # Calculate parallax offsets with different depths
+        bg_offset_target = [self.offset[0] * -0.1, self.offset[1] * -0.1]  # Background moves slowest
+        logo_offset_target = [self.offset[0] * -0.25, self.offset[1] * -0.25]  # Logo moves medium
+        button_offset_target = [self.offset[0] * -0.3, self.offset[1] * -0.3]  # Button moves medium
+
+        self.bg_offset[0] += (bg_offset_target[0] - self.bg_offset[0]) / 10
+        self.bg_offset[1] += (bg_offset_target[1] - self.bg_offset[1]) / 10
+
+        self.logo_offset[0] += (logo_offset_target[0] - self.logo_offset[0]) / 10
+        self.logo_offset[1] += (logo_offset_target[1] - self.logo_offset[1]) / 10
+
+        self.button_offset[0] += (button_offset_target[0] - self.button_offset[0]) / 10
+        self.button_offset[1] += (button_offset_target[1] - self.button_offset[1]) / 10
+
+        self.bg_pos[0] = self.bg_pos_ori[0] + self.bg_offset[0]
+        self.bg_pos[1] = self.bg_pos_ori[1] + self.bg_offset[1]
+
+        self.logo_pos[0] = self.logo_pos_ori[0] + self.logo_offset[0]
+        self.logo_pos[1] = self.logo_pos_ori[1] + self.logo_offset[1]
+
+        self.button_pos[0] = self.button_pos_ori[0] + self.button_offset[0]
+        self.button_pos[1] = self.button_pos_ori[1] + self.button_offset[1]
+
+
+        button_rect = pygame.Rect(self.button_pos[0], self.button_pos[1], 
+                                self.button_image.get_width(), self.button_image.get_height())
+       
+        if button_rect.collidepoint(mouse_pos):
+            self.target_alpha = self.hover_alpha
+        else:
+            self.target_alpha = 100
+           
+        self.button_alpha += (self.target_alpha - self.button_alpha) / 10
+        
+        button_surface = self.button_image.copy()
+        button_surface.set_alpha(int(self.button_alpha))
+        
+        
+        # render all layers here
+        screen.blit(self.background, self.bg_pos)
+
+        screen.blit(self.fade_surfaces[100], (0, 0))
+
+        screen.blit(self.logo, self.logo_pos)
+        screen.blit(button_surface, self.button_pos)
+        
+
+        draw_circle(mouse_pos)
+
+        # Handle fade effects
+        if self.fading_in:
+            self.fade_alpha = max(0, self.fade_alpha - self.fade_in_speed)
+            if self.fade_alpha == 0:
+                self.fading_in = False
+               
+        if self.fading_out:
+            self.fade_alpha = min(255, self.fade_alpha + self.fade_out_speed)
+            if self.fade_alpha == 255:
+                self.fading_out = False
+                self.end_check = True
+               
+        if self.fade_alpha > 0:
+            screen.blit(self.fade_surfaces[int(self.fade_alpha)], (0, 0))
+       
+        return button_rect.collidepoint(mouse_pos) and pygame.mouse.get_pressed()[0]
+
+    def fade_in(self):
+        self.fade_alpha = 255
+        self.fading_in = True
+        self.fading_out = False
+
+    def fade_out(self):
+        self.fade_alpha = 0
+        self.fading_out = True
+        self.fading_in = False
+
+
 class Game:
     def __init__(self):
         with open('assets\\game.json', 'r') as f:
@@ -220,9 +513,9 @@ class Game:
         self.goldd += (self.gold - self.goldd) / 10 * dt
         self.goldc += (255 - self.goldc) / 30 * dt
         draw_text(f'EXP: {round(self.expd)}', width * 0.01, height / 4, 
-                color=(255, 255, self.expc))
+                color=WHITE)
         draw_text(f'GOLD: {round(self.goldd)}', width * 0.01, height / 4 + 90, 
-                color=(self.goldc, self.goldc, 255))
+                color=WHITE)
 
     def save_progress(self):
         self.expc = 0
@@ -236,7 +529,7 @@ class Environment:
     def __init__(self):
         self.border_image = 0
         self.sky_color = colors['green'][5]
-        self.night_sky_color = colors['blue'][21]
+        self.night_sky_color = "#1f1013"
         self.background_color = BLACK
         self.soil = basic_tile_image
         self.soil_night = basic_tile_image_night
@@ -245,7 +538,7 @@ class Environment:
         self.maintiles = [self.grass, self.soil]
         self.tile_width = self.soil.get_width()
         self.floor_modded = floor - player.height / 8
-        self.tile_count = 60
+        self.tile_count = 150
         self.mountains = mountain_image
         self.mountain_pos_x = 0
         self.mountain_pos_x_base = 0
@@ -273,7 +566,7 @@ class Environment:
         
         # Initialize environment state
         self.current_day = 0 # start from zero since cutscene auto +1
-        self.daynight_value = 5
+        self.daynight_value = 0
         self.daynight = math.sin(self.daynight_value)
         self.daynight_inverse = math.cos(self.daynight_value)
         
@@ -456,10 +749,13 @@ class Environment:
             self.game_time = 0.005
             
         self.daynight_value += 1 / 1000 * dt
-        self.daynight = math.sin(self.daynight_value)
+        self.daynight = math.sin(self.daynight_value * 1 ** (-1))
+        print(self.daynight)
         
-        if self.daynight > 0:
+        # DAY
+        if self.daynight >= 0:
 
+            
             # set false for next cutscene
             if self.night_cutscene_activated:
                 self.night_cutscene_activated = False
@@ -470,6 +766,10 @@ class Environment:
                 self.background_color = self.sky_color
                 self.mountains = mountain_image
                 self.play_day_cutscene()
+
+                if fireflies_night in effects_array:
+                    effects_array.remove(fireflies_night)
+                effects_array.append(fireflies_day)
                 
             
             if len(mushroom_array) < self.mushroom_counts:
@@ -480,10 +780,11 @@ class Environment:
                 self.mushroom_ticker = 0
 
             if not self.daynight_tswitch:
-                self.flash_in()
+                self.fade_in()
                 self.maintiles = [self.grass, self.soil]
                 self.daynight_tswitch = True
-
+        
+        # NIGHT
         else:
 
             # set false for next cutscene
@@ -495,8 +796,13 @@ class Environment:
                 self.background_color = self.night_sky_color
                 self.mountains = mountain_image_night
                 self.play_night_cutscene()
+
+                if fireflies_day in effects_array:
+                    effects_array.remove(fireflies_day)
+
+                effects_array.append(fireflies_night)
             
-            '''
+            
 
             # Regular meteor spawning
             # NEED PERFORMANCE IMPROVEMENT, NOT RENDER PROBLEM BUT DATA LOAD CALCULATED OUTSIDE OF VISIBLE RANGE IS DRAGGING PERFORMANCE
@@ -504,7 +810,7 @@ class Environment:
             if self.meteor_timer >= self.meteor_spawn_rate:
                 self.meteor_timer = 0
                 meteor_array.append(Meteor())
-            '''
+            
 
             # Sequence attack handling
             if self.sequence_active:
@@ -554,7 +860,7 @@ class Environment:
 
     def render(self):
         screen.fill(self.background_color)
-        for i in range(5):
+        for i in range(3):
             screen.blit(self.mountains, 
                        [offset[x] / 10 - width + width * i + self.mountain_pos_x, 
                         offset[y] / 3])
@@ -616,7 +922,7 @@ class Environment:
                 self.fade += 1 * dt
             else:
                 self.fading_out = False
-            screen.blit(fades[int(self.fade)], [0, 0])
+            screen.blit(fades[min(254, int(self.fade))], [0, 0])
 
         if self.flashing_in or self.flashing_out:
             if self.flashing_in and self.flash > 0:
@@ -627,7 +933,7 @@ class Environment:
                 self.flash += 1 * dt
             else:
                 self.flashing_out = False
-            screen.blit(flashes[int(self.flash)], [0, 0])
+            screen.blit(flashes[min(254, int(self.flash))], [0, 0])
 
     def slow_motion(self, time=15):
         if self.slow_time < 1:
@@ -640,7 +946,7 @@ class KillStreak:
     def __init__(self):
         self.kill_timer = 0
         self.kill_count = 0
-        self.kill_window = 50
+        self.kill_window = 150
         self.roman_numerals = {
             3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII',
             8: 'VIII', 9: 'IX', 10: 'X', 11: 'XI',
@@ -790,11 +1096,12 @@ class Player:
         # Handle map wrapping
         if self.steps < self.map_start:
             # If player goes too far left, wrap to right
-            self.steps = self.map_end - 100
+            self.steps = self.map_end
+
 
         elif self.steps > self.map_end:
             # If player goes too far right, wrap to left
-            self.steps = self.map_start + 100
+            self.steps = self.map_start
 
         # Handle void falling
         if self.pos[y] > height * 1.5:  # If fallen too far
@@ -841,7 +1148,7 @@ class Player:
         if self.jump_count < 3:
             self.gravity = -30
             self.jump_count += 1
-            effects_array.append(Particles([player_pos_raw[x], player_pos_raw[y] + player.height], 5))
+            effects_array.append(GlowingParticles([player_pos_raw[x], player_pos_raw[y] + player.height], 5))
 
     def switch_weapon(self, con):
         if con == 1 and self.current_weapon < len(self.weapons) - 1:
@@ -963,7 +1270,7 @@ class Meteor:
         if self in meteor_array:
             meteor_array.remove(self)
 
-        effects_array.append(Explosion(self.pos, color_base=[255, 100, 0], count=15))
+        effects_array.append(Explosion(self.pos, color_base=[255, 100, 0], count=25))
 
 
         
@@ -1049,21 +1356,29 @@ class Meteor:
         return False
 
     def render(self):
+
+        """
         # Draw health bar
         p = [self.pos[x] - self.width/2 + offset[x],
              self.pos[y] - self.height + offset[y]]
         draw_bar([p[x] + self.width/2, p[y] - 30], self.hp, self.max_hp)
-        
-        # Draw meteor
-        rotated = pygame.transform.rotate(
-            self.image, 
-            -math.degrees(self.angle) - 90
-        )
-        screen.blit(
-            rotated,
-            [self.pos[0] - rotated.get_width()/2 + offset[0],
-             self.pos[1] - rotated.get_height()/2 + offset[1]]
-        )
+        """
+
+        # Get screen position
+        screen_x = self.pos[0] + offset[0]
+        screen_y = self.pos[1] + offset[1]
+
+        # Check if meteor is on screen (including some margin for rotation)
+        margin = max(self.image.get_width(), self.image.get_height())
+        if -margin < screen_x < width + margin and -margin < screen_y < height + margin:
+            # Draw meteor
+            rotated = pygame.transform.rotate(self.image, -math.degrees(self.angle) - 90)
+            screen.blit(
+                rotated,
+                [screen_x - rotated.get_width()/2,
+                    screen_y - rotated.get_height()/2]
+            )
+
 
 class Mushroom:
     def __init__(self, range=[width / 2, width / 1.5]):
@@ -1732,6 +2047,142 @@ class GlowingParticles:
         
         return False
 
+
+class Fireflies:
+    def hex_to_rgb(self, hex_color):
+        if isinstance(hex_color, list) and len(hex_color) == 3:
+            return hex_color
+        hex_color = hex_color.lstrip('#')
+        return [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
+    
+    
+
+    def __init__(self, pos, count, size=10, color='#FFE87C', spread=2300):  # Added spread parameter
+        self.pos = pos
+        self.particles = []
+        self.scale_x, self.scale_y = 36, 3.2
+        
+        # Convert color to RGB
+        color_rgb = self.hex_to_rgb(color)
+        
+        # Each firefly pulse rate
+        self.pulse_frequency = random.uniform(0.01, 0.1)
+
+        def get_cosmic_coords(spread, height_limit):
+            # Increase scale factors for bigger patterns
+            scale_x = self.scale_x  # Horizontal scale multiplier 
+            scale_y = self.scale_y  # Vertical scale multiplier
+            
+            t = random.uniform(0, 4 * math.pi)
+            phi = (1 + math.sqrt(5)) / 2
+            
+            x = (spread * scale_x) * math.cos(t/phi) * math.exp(-0.2*t)
+            y = height_limit/2 + ((height_limit * scale_y) /4 * math.sin(t*2) * math.exp(-0.1*t))
+            
+            return [int(x), int(y)]
+        
+        # Add path progress for each particle
+        for i in range(count):
+            spawn_pos = get_cosmic_coords(width/2, floor - 100)  # Initial position
+            particle_size = random.randint(int(width / 1500 * size), 
+                                        int(width / 1500 * 1.5 * size))
+            particle_spread = random.uniform(0.8, 1.2)    # Individual scale variation
+            self.particles.append([
+                spawn_pos,  # Position
+                [0, 0],    # Velocity
+                particle_size,
+                [color_rgb[0], color_rgb[1], color_rgb[2], 255],
+                random.uniform(0, math.pi * 2),  # Phase
+                random.uniform(0, 8 * math.pi),  # Path progress
+                random.uniform(0.001, 0.003),     # Individual speed
+                particle_spread
+            ])
+
+    def render(self):
+        position = 0
+        velocity = 1
+        size = 2
+        color = 3
+        phase = 4
+        progress = 5
+        speed = 6
+        spread = 7  # Add spread factor for width variation
+
+        for i in self.particles[:]:
+            i[progress] += i[speed] * dt
+            t = i[progress]
+            
+            # Base path with more even distribution
+            base_x = width/2 + (width/3) * math.sin(t/3)
+            base_y = floor/2 + (height/6) * math.cos(t*2)
+            
+            # Add spiral component
+            spiral_x = math.cos(t) * t * 5
+            spiral_y = math.sin(t) * t * 3
+            
+            # Combine with individual spread
+            i[position][0] = base_x + spiral_x + math.sin(t) * i[spread] * 50  * self.scale_x
+            i[position][1] = base_y + spiral_y + math.cos(t) * i[spread] * 30 * self.scale_y
+
+            # Reset progress when reaching end of path
+            if t > 8 * math.pi:
+                i[progress] = 0
+
+            # Add small wander
+            wander_x = math.sin(i[phase]) * (height / 600)
+            wander_y = math.cos(i[phase] * 0.5) * (height / 600)
+           
+            i[phase] += self.pulse_frequency * dt
+            
+            # Calculate pulse brightness
+            pulse = (math.sin(i[phase]) + 1) * 0.5
+            
+            # Pixelation factor
+            pixel_scale = 2
+
+
+            screen_x = i[position][x] + wander_x + offset[x] - i[size] * 1.5
+            screen_y = i[position][y] + wander_y + offset[y] - i[size] * 1.5
+
+            if 0 < screen_x < width and 0 < screen_y < height:
+            
+                # Create smaller surface first
+                small_size = 18
+                small_surface = pygame.Surface((small_size, small_size), pygame.SRCALPHA)
+                
+                # Calculate scaled positions and sizes
+                small_center = small_size / 2
+                small_outer = max(1, int(i[size] * (0.7 + pulse * 0.3) / pixel_scale))
+                small_core = max(1, int(i[size] * (0.2 + pulse * 0.3) / pixel_scale))
+                
+                # Calculate colors with pulse
+                main_color = []
+                for c in i[color][:3]:
+                    whitened = int(c + (255 - c) * (0.45 + pulse * 0.3))
+                    main_color.append(whitened)
+                
+                # Draw on small surface
+                outer_alpha = int(5 + pulse * 10)
+                pygame.draw.circle(small_surface, (*i[color][:3], outer_alpha),
+                                (small_center, small_center),
+                                small_outer)
+                
+                core_alpha = int(200 + pulse * 55)
+                pygame.draw.circle(small_surface, WHITE,
+                                (small_center, small_center),
+                                small_core)
+                
+                
+                
+                # Scale up to final size
+                final_size = int(i[size] * 3)
+                glow_surface = pygame.transform.scale(small_surface, (final_size, final_size))
+                
+                # Blit with blend, adding wander offset to position
+                screen.blit(glow_surface, (screen_x, screen_y), special_flags=pygame.BLEND_RGB_ADD)
+        
+        return False
+
 class Damage_text:
     def __init__(self, string, pos, color=colors['red'][20], critical=False, size=60):
         self.color = color
@@ -1779,6 +2230,7 @@ class HealthText:
         # Remove when animation complete
         if self.size <= 0:
             effects_array.remove(self)
+    
 
 
 # utility function
@@ -1859,7 +2311,7 @@ def screen_shake(magnitude):
     offset[y] += random.choice([b, -b])
 
 def is_on_screen(obj):
-    conda = 0 - obj.width < obj.pos[x] + offset[x] < width + obj.width
+    conda = 0 < obj.pos[x] + offset[x] < width
     condb = obj.pos[y] > -offset[y]
     return conda and condb
 
@@ -1888,18 +2340,90 @@ def draw_multiline_text_left(lines, x, y, color=(255, 255, 255)):
         # All lines start at x position
         screen.blit(text_surface, (x, y + i * (font.get_height() + 5)))
 
+
+# Usage in main game:
+def play_intro_sequence():
+    splash = SplashScreen()
+    lore = LoreSequence()
+    menu = MainMenu()
+
+    running_intro = True
+    running_menu = True
+    
+    play_music_long_fade(music_shroom)
+    
+    
+    # Show splash screen first
+    while running_intro:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running_intro = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    running_intro = False    
+        screen.fill(BLACK)
+        if splash.render():
+            break
+        pygame.display.flip()
+        clock.tick(60)
+    
+    # Then show lore sequence
+    while running_intro:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running_intro = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    running_intro = False                
+        screen.fill(BLACK)
+        if lore.render(screen):
+            running_intro = False
+        pygame.display.flip()
+        clock.tick(60)
+    
+    # then show main menu
+    while running_menu:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                sys.exit()
+                
+        if menu.render():
+            menu.fading_out = True
+        if menu.end_check == True:
+            running_menu = False
+
+        pygame.display.flip()
+        clock.tick(60)
+
+
 # Initialize game objects
 player = Player()
 game = Game()
 killstreak = KillStreak()
 
+# Create fireflies
+fireflies_day = Fireflies(
+    pos=[width/2, height/2],  # Center of screen
+    count=200,                 # Number of fireflies
+    size=6,                 # Size of fireflies
+    color=colors['blue'][21],         # Warm yellow color
+    spread=4000
+)
 
-dt = 1
+fireflies_night = Fireflies(
+    pos=[width/2, height/2],  # Center of screen
+    count=80,                 # Number of fireflies
+    size=6,                 # Size of fireflies
+    color=colors['red'][21],         # Warm yellow color
+    spread=4000
+)
+
+
+
 bg_pos = 0
 bg_pos_targ = 0
 offset_target = [0, 0]
 offset = [0, height * 10]
-last_frame = pygame.time.get_ticks()
 moving_L = False
 moving_R = False
 player_pos_raw = [0, 0]
@@ -1930,6 +2454,8 @@ entities_array = []
 effects_array = [killstreak]
 
 
+
+
 player.weapons = [Stargazer(), Shotgun()]
 
 environment = Environment()
@@ -1937,6 +2463,13 @@ weapon = player.weapons[player.current_weapon]
 environment.fade_in()
 cam_osc_base = 0
 cam_osc = [0, 0]
+
+# play intro here
+play_intro_sequence()
+
+# initialise dt here cuz i dont want dt to be messed up by the intro  
+dt = 1
+last_frame = pygame.time.get_ticks()
 
 # Main game loop
 while True:
@@ -2035,9 +2568,12 @@ while True:
 
     # Render game world
     environment.render()
-    for building in buildings_array:
-        building.update()
-        building.render()
+
+    # update and render buildings
+    if environment.daynight > 0:
+        for building in buildings_array:
+            building.update()
+            building.render()
     environment.tile_render()
 
     # Update and render entities
@@ -2054,7 +2590,6 @@ while True:
                     projectile.end(effect=Particles(projectile.pos, 3, size=10, 
                                                   color=entity.blood,
                                                   speed=0.5, size_change=5, gravity=True))
-
 
     # RENDER SECTION 
     

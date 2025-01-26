@@ -128,6 +128,11 @@ stargazer_bullet_image = load_game_image('bullet-stargazer.png', [width / 30, wi
 shotgun_bullet_image = load_game_image('bullet-shotgun.png', [width / 30, width / 30])
 player_image = load_game_image('player.png', [width / 10, width / 10])
 
+main_menu_button_images = []
+main_menu_button_images_count = 11
+for i in range(main_menu_button_images_count):
+    main_menu_button_images.append(load_game_image(f'button-{i+1 :02}.png'))
+
 # width/height = k
 # width * 0.5 / height * 0.5 = k
 # 
@@ -174,17 +179,17 @@ for i in range(255):
     fades.append(blacksurf.copy())
     flashes.append(whitesurf.copy())
 
-def play_music(path):
+def play_music(path, loop):
     # bug fixing here
     pygame.mixer.music.stop()
     pygame.mixer.music.unload()
     pygame.mixer.music.load(path)
     pygame.mixer.music.play(-1, 0, fade_ms=1500)
 
-def play_music_long_fade(path):
+def play_music_long_fade(path, loops=-1):
     pygame.mixer.music.unload()
     pygame.mixer.music.load(path)
-    pygame.mixer.music.play(-1, fade_ms=10000)
+    pygame.mixer.music.play(loops, fade_ms=10000)
 
 
 def delta_to_modifier(delta):
@@ -360,13 +365,24 @@ class LoreSequence:
 
 
 class MainMenu:
-    def __init__(self):
+    def hex_to_rgb(self, hex_color):
+        if isinstance(hex_color, list) and len(hex_color) == 3:
+            return hex_color
+        hex_color = hex_color.lstrip('#')
+        return [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
+
+    def __init__(self):        
+
         self.background = pygame.transform.scale(mountain_image.copy(), (width * 1.2, height * (width * 1.2 / width)))
-        self.logo = game_logo_image  
-        self.button_image = mushroom_image_idle.copy()
-       
+        self.logo = game_logo_image
+
+        self.button_image_index = 0
+        self.button_images = main_menu_button_images.copy()
+        self.button_images = [pygame.transform.scale(img, [width/5, (width / (width/5)) * img.get_height()]) for img in self.button_images]
+        self.button_image = self.button_images[self.button_image_index]
+        
         self.logo = pygame.transform.scale(self.logo, [width * 0.6, (width * 0.6) / self.logo.get_width() * self.logo.get_height()])
-        self.button_image = pygame.transform.scale(self.button_image, [width/5, height/5])
+        
 
         self.bg_pos_ori = [width/2 - self.background.get_width()/2, height*0.65 - self.background.get_height()/2]
         self.logo_pos_ori = [width/2 - self.logo.get_width()/2, height/4]
@@ -384,6 +400,7 @@ class MainMenu:
         self.fade_surfaces = []
         fade_surface = pygame.Surface((width, height))
         fade_surface.fill(BLACK)
+
         for alpha in range(256):
             fade_surf = fade_surface.copy()
             fade_surf.set_alpha(alpha)
@@ -400,19 +417,106 @@ class MainMenu:
         self.logo_offset = [0, 0]
         self.button_offset = [0, 0]
 
+        self.particles = []
+        self.pulse_frequency = 0.1
+
+        self.cam_osc_base = 0
+        
+
+        # Initialize particles
+        for i in range(100):  # Number of particles
+            size_mod = 7
+            particle_size = random.randint(int(width / 1500 * size_mod), int(width / 1500 * 1.5 * size_mod))
+            
+            self.particles.append([
+                [random.randint(0, width), random.randint(0, height)],  # Position
+                [0, 0],  # Velocity
+                particle_size,  # Size
+                self.hex_to_rgb(colors['brown'][21]),  # Color (blue)
+                random.uniform(0, math.pi * 2),  # Phase
+                random.uniform(0, 8 * math.pi),  # Progress
+                random.uniform(0.001, 0.003),    # Speed
+                random.uniform(0.8, 1.2),         # Spread
+            ])
+    
+
+    def render_fireflies(self):
+        position = 0
+        velocity = 1
+        size = 2
+        color = 3
+        phase = 4
+        progress = 5
+        speed = 6
+        spread = 7
+
+        for i in self.particles[:]:
+            i[progress] += i[speed]
+            t = i[progress]
+            
+            base_x = width/2 + (width/3) * math.sin(t/3)
+            base_y = floor/2 + (height/6) * math.cos(t*2)
+            
+            spiral_x = math.cos(t) * t * 5
+            spiral_y = math.sin(t) * t * 3
+            
+            i[position][0] = base_x + spiral_x + math.sin(t) * i[spread] * 50 * 60 #scale x
+            i[position][1] = base_y + spiral_y + math.cos(t) * i[spread] * 30 * 10 # scale y
+
+            if t > 8 * math.pi:
+                i[progress] = 0
+
+            wander_x = math.sin(i[phase]) * (height / 600)
+            wander_y = math.cos(i[phase] * 0.5) * (height / 600)
+            
+            i[phase] += self.pulse_frequency
+            pulse = (math.sin(i[phase]) + 1) * 0.5
+
+            screen_x = i[position][x] + wander_x - i[size] * 1.5 + self.logo_offset[0] - width * 1.7
+            screen_y = i[position][y] + wander_y - i[size] * 1.5 + self.logo_offset[1] + height * 0.1
+
+            if 0 < screen_x < width and 0 < screen_y < height:
+                small_size = 18
+                small_surface = pygame.Surface((small_size, small_size), pygame.SRCALPHA)
+                small_center = small_size / 2
+                small_outer = max(1, int(i[size] * (0.7 + pulse * 0.3) / 2))
+                small_core = max(1, int(i[size] * (0.2 + pulse * 0.3) / 2))
+                
+                main_color = []
+                for c in i[color][:3]:
+                    whitened = int(c + (255 - c) * (0.45 + pulse * 0.3))
+                    main_color.append(whitened)
+                
+                outer_alpha = int(5 + pulse * 10)
+                pygame.draw.circle(small_surface, (*i[color][:3], outer_alpha),
+                                (small_center, small_center),
+                                small_outer)
+                
+                core_alpha = int(200 + pulse * 55)
+                pygame.draw.circle(small_surface, WHITE,
+                                (small_center, small_center),
+                                small_core)
+                
+                final_size = int(i[size] * 3)
+                glow_surface = pygame.transform.scale(small_surface, (final_size, final_size))
+                screen.blit(glow_surface, (screen_x, screen_y), special_flags=pygame.BLEND_RGB_ADD)
+
 
     def render(self):
+        cam_osc = [math.sin(self.cam_osc_base * 0.05) * 50, math.cos(self.cam_osc_base * 0.05) * 50]
+        self.cam_osc_base += 1
+        
         screen.fill(colors['green'][5])
         screen.blit(self.background, self.bg_pos)
         screen.blit(self.logo, self.logo_pos)
        
         mouse_pos = pygame.mouse.get_pos()        
-        self.offset = (mouse_pos[0] - width/2, mouse_pos[1] - height /2)
+        self.offset = (mouse_pos[0] - width/2 + cam_osc[0], mouse_pos[1] - height /2 + cam_osc[1])
 
         # Calculate parallax offsets with different depths
-        bg_offset_target = [self.offset[0] * -0.1, self.offset[1] * -0.1]  # Background moves slowest
-        logo_offset_target = [self.offset[0] * -0.25, self.offset[1] * -0.25]  # Logo moves medium
-        button_offset_target = [self.offset[0] * -0.3, self.offset[1] * -0.3]  # Button moves medium
+        bg_offset_target = [self.offset[0] * -0.05, self.offset[1] * -0.05]  # Background moves slowest
+        logo_offset_target = [self.offset[0] * -0.1, self.offset[1] * -0.1]  # Logo moves medium
+        button_offset_target = [self.offset[0] * -0.15, self.offset[1] * -0.15]  # Button moves medium
 
         self.bg_offset[0] += (bg_offset_target[0] - self.bg_offset[0]) / 10
         self.bg_offset[1] += (bg_offset_target[1] - self.bg_offset[1]) / 10
@@ -438,8 +542,14 @@ class MainMenu:
        
         if button_rect.collidepoint(mouse_pos):
             self.target_alpha = self.hover_alpha
+            self.button_image_index = min(main_menu_button_images_count-1, self.button_image_index + 1)
+            self.button_image = self.button_images[self.button_image_index]
+
+
         else:
             self.target_alpha = 100
+            self.button_image_index = max(0, self.button_image_index - 1)
+            self.button_image = self.button_images[self.button_image_index]
            
         self.button_alpha += (self.target_alpha - self.button_alpha) / 10
         
@@ -451,9 +561,12 @@ class MainMenu:
         screen.blit(self.background, self.bg_pos)
 
         screen.blit(self.fade_surfaces[100], (0, 0))
+        self.render_fireflies()
 
         screen.blit(self.logo, self.logo_pos)
         screen.blit(button_surface, self.button_pos)
+
+        
         
 
         draw_circle(mouse_pos)
@@ -490,12 +603,9 @@ class Game:
     def __init__(self):
         with open('assets\\game.json', 'r') as f:
             self.gamedata = json.load(f)
-        self.exp = self.gamedata["exp"]
-        self.gold = self.gamedata["gold"]
-        self.expd = 0
-        self.expc = 0
-        self.goldd = 0
-        self.goldc = 0
+        self.stardust = self.gamedata["stardust"]
+        self.stardust_d = 0
+
 
     def render_ui(self):
         # Display FPS at top right
@@ -508,20 +618,13 @@ class Game:
         draw_multiline_text_right(performance_stats_text, width * 0.99, height * 0.01, color=(255, 255, 255))
         
         # Original UI elements
-        self.expd += (self.exp - self.expd) / 10 * dt
-        self.expc += (255 - self.expc) / 30 * dt
-        self.goldd += (self.gold - self.goldd) / 10 * dt
-        self.goldc += (255 - self.goldc) / 30 * dt
-        draw_text(f'EXP: {round(self.expd)}', width * 0.01, height / 4, 
-                color=WHITE)
-        draw_text(f'GOLD: {round(self.goldd)}', width * 0.01, height / 4 + 90, 
+        self.stardust_d += (self.stardust - self.stardust_d) / 10 * dt
+        draw_text(f'Stardust {round(self.stardust_d)}', width * 0.01, height / 4, 
                 color=WHITE)
 
     def save_progress(self):
-        self.expc = 0
-        self.goldc = 0
-        self.gamedata['exp'] = self.exp
-        self.gamedata['gold'] = self.gold
+        self.stardust_d = 0
+        self.gamedata['stardust'] = self.stardust
         with open('assets\\game.json', 'w') as f:
             json.dump(self.gamedata, f)
 
@@ -750,7 +853,6 @@ class Environment:
             
         self.daynight_value += 1 / 1000 * dt
         self.daynight = math.sin(self.daynight_value * 1 ** (-1))
-        print(self.daynight)
         
         # DAY
         if self.daynight >= 0:
@@ -1187,7 +1289,7 @@ class Meteor:
         self.max_hp = 20
         self.hitted = False
         self.tpos = [0, 0]
-        self.exp = 150
+        self.stardust = 150
         
         # Sequence attack properties
         self.sequence_index = sequence_index
@@ -1285,8 +1387,10 @@ class Meteor:
         
         self.create_explosion()
         die_sound.play()
-        game.exp += self.exp
-        game.gold += (self.exp * random.randint(5, 15) / 10)
+
+        game.stardust += self.stardust
+        # game.exp += self.exp
+        # game.gold += (self.exp * random.randint(5, 15) / 10)
         environment.slow_motion(time=10)
         environment.kill_flash()
         game.save_progress()
@@ -1405,7 +1509,7 @@ class Mushroom:
         self.cded = False
         self.cdtime = random.randint(40, 80)
         self.hitted = False
-        self.exp = 10
+        self.stardust = 10
         effects_array.append(Particles(self.pos, count=10, size=9, color=colors['red'][18], size_change=3))
 
     def get_target(self):
@@ -1425,8 +1529,6 @@ class Mushroom:
                 player.current_health = 100
             effects_array.append(HealthText(5, player_pos_raw))
 
-            game.exp += self.exp
-            game.gold += (self.exp * random.randint(5, 15) / 10)
         if self.jumping and self.pos[y] == floor:
             self.pos[y] += self.gravity * dt
         if self.gravity < 20:
@@ -1477,6 +1579,8 @@ class Mushroom:
 
     def end(self):
         
+        game.stardust += self.stardust
+
         for i in entities_array:
             if self in i:
                 i.remove(self)
@@ -2350,7 +2454,7 @@ def play_intro_sequence():
     running_intro = True
     running_menu = True
     
-    play_music_long_fade(music_shroom)
+    play_music_long_fade(music_shroom, loops=0)
     
     
     # Show splash screen first
@@ -2404,7 +2508,7 @@ killstreak = KillStreak()
 # Create fireflies
 fireflies_day = Fireflies(
     pos=[width/2, height/2],  # Center of screen
-    count=200,                 # Number of fireflies
+    count=80,                 # Number of fireflies
     size=6,                 # Size of fireflies
     color=colors['blue'][21],         # Warm yellow color
     spread=4000
@@ -2419,7 +2523,7 @@ fireflies_night = Fireflies(
 )
 
 
-
+dt = 1 # pre initialise dt before any class to prevent dt not defined
 bg_pos = 0
 bg_pos_targ = 0
 offset_target = [0, 0]

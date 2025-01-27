@@ -5,6 +5,9 @@ import math
 import sys
 import os
 
+# change directory to this script to prevent dislocation
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 
 # Base colors
 RED = (255, 0, 0)
@@ -159,6 +162,11 @@ explode_sound = pygame.mixer.Sound('assets\\sound-explode.wav')
 select_sound = pygame.mixer.Sound('assets\\sound-select.wav')
 hit_sound = pygame.mixer.Sound('assets\\sound-hit.wav')
 die_sound = pygame.mixer.Sound('assets\\sound-die.wav')
+
+game_start_sound = pygame.mixer.Sound('assets\\sound-start.wav')
+start_select_sound = pygame.mixer.Sound('assets\\start-select.wav')
+teleport_sound = pygame.mixer.Sound('assets\\sound-teleport.wav')
+teleport_sound.set_volume(0.6)
 
 # soundtrack
 music_shroom = os.path.join('assets', 'shroom.mp3')
@@ -422,6 +430,8 @@ class MainMenu:
 
         self.cam_osc_base = 0
         
+        self.trigger = True
+        
 
         # Initialize particles
         for i in range(100):  # Number of particles
@@ -541,12 +551,17 @@ class MainMenu:
                                 self.button_image.get_width(), self.button_image.get_height())
        
         if button_rect.collidepoint(mouse_pos):
+            if self.trigger:
+                start_select_sound.play()
+                self.trigger = not self.trigger
             self.target_alpha = self.hover_alpha
             self.button_image_index = min(main_menu_button_images_count-1, self.button_image_index + 1)
             self.button_image = self.button_images[self.button_image_index]
 
 
         else:
+
+            self.trigger = True
             self.target_alpha = 100
             self.button_image_index = max(0, self.button_image_index - 1)
             self.button_image = self.button_images[self.button_image_index]
@@ -668,8 +683,8 @@ class Environment:
                                            self.floor_modded + self.tile_width * s], 'soil'])
         
         # Initialize environment state
-        self.current_day = 0 # start from zero since cutscene auto +1
-        self.daynight_value = 0
+        self.current_day = 5 # start from zero since cutscene auto +1
+        self.daynight_value = 4
         self.daynight = math.sin(self.daynight_value)
         self.daynight_inverse = math.cos(self.daynight_value)
         
@@ -741,9 +756,6 @@ class Environment:
                     game.save_progress()
                     pygame.quit()
                     sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        cutscene_running = False
 
             # Clear screen
             screen.fill(BLACK)
@@ -804,9 +816,6 @@ class Environment:
                     game.save_progress()
                     pygame.quit()
                     sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        cutscene_running = False
 
             # Clear screen
             screen.fill(BLACK)
@@ -1247,10 +1256,20 @@ class Player:
         self.image = pygame.transform.rotate(self.image_raw, self.rotation)
 
     def jump(self):
-        if self.jump_count < 3:
-            self.gravity = -30
+        if self.jump_count < 7:
+            
+            effects_array.append(GlowingParticles([player_pos_raw[x], player_pos_raw[y] + player.height], 5, size=6))
+
+            if self.jump_count % 2 == 1:
+                self.velo_x *= 80
+                self.velo_y = 0
+                teleport_sound.play()
+                effects_array.append(Explosion([player_pos_raw[x], player_pos_raw[y]], count=15, size=1, color_base=colors['blue'][21], phase=30))
+            else:
+                self.gravity = -30
+
             self.jump_count += 1
-            effects_array.append(GlowingParticles([player_pos_raw[x], player_pos_raw[y] + player.height], 5))
+
 
     def switch_weapon(self, con):
         if con == 1 and self.current_weapon < len(self.weapons) - 1:
@@ -1268,10 +1287,10 @@ class Player:
         # Health bar
         health_width = ((self.width * self.current_health) / self.max_health)
         health_pos = [player_pos[x] - self.centered[x], player_pos[y] - 20]
-        pygame.draw.rect(screen, (255, 0, 0), 
-                        (health_pos[0], health_pos[1] - 10, self.width, 10))
-        pygame.draw.rect(screen, (0, 255, 0), 
-                        (health_pos[0], health_pos[1] - 10, health_width, 10))
+        pygame.draw.rect(screen, colors['red'][20],
+                        (health_pos[0], health_pos[1] - 10, self.width, 10), border_radius=10)
+        pygame.draw.rect(screen, colors['green'][7],
+                        (health_pos[0], health_pos[1] - 10, health_width, 10), border_radius=10)
         
         screen.blit(self.image, [player_pos[x] - self.centered[x], player_pos[y]])
 
@@ -1314,8 +1333,8 @@ class Meteor:
             dx = self.target_x - self.pos[0]
             dy = target_y - self.pos[1]
             # Adjust these values to change projectile arc
-            self.velocity[0] = dx * 0.05
-            self.velocity[1] = dy * 0.05 - 10  # Initial upward velocity for arc
+            self.velocity[0] = dx * 0.05 * environment.current_day
+            self.velocity[1] = dy * 0.05 * environment.current_day - 10 # Initial upward velocity for arc
         else:
             self.velocity = [random.uniform(-5, 5), random.uniform(-15, -10)]
 
@@ -1350,7 +1369,7 @@ class Meteor:
             distance = math.sqrt(dx*dx + dy*dy)
             
             # Fixed speed for consistent timing
-            speed = 20
+            speed = 2 * environment.current_day
             self.velocity = [
                 dx / distance * speed,
                 dy / distance * speed
@@ -1474,7 +1493,7 @@ class Meteor:
 
         # Check if meteor is on screen (including some margin for rotation)
         margin = max(self.image.get_width(), self.image.get_height())
-        if -margin < screen_x < width + margin and -margin < screen_y < height + margin:
+        if -margin < screen_x < width + margin and -margin * 1.3 < screen_y < height + margin:
             # Draw meteor
             rotated = pygame.transform.rotate(self.image, -math.degrees(self.angle) - 90)
             screen.blit(
@@ -1865,7 +1884,7 @@ class Explosion:
         hex_color = hex_color.lstrip('#')
         return [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
 
-    def __init__(self, pos, color_base=[255, 255, 255], count=5, size=1, angle=1):
+    def __init__(self, pos, color_base=[255, 255, 255], count=5, size=1, angle=1, phase=0):
         self.pos = pos
         self.size = size
         self.particles = []
@@ -1889,6 +1908,11 @@ class Explosion:
                  max(0, min(255, abs(color_base_rgb[2] - subbed))),
                  255]  # Color with alpha
             ])
+        
+        for i in self.particles[:]:
+            # pre-Update position
+            i[0][x] += i[1][x] * self.angle * dt * phase
+            i[0][y] += i[1][y] * self.angle * dt * phase
 
     def render(self):
         position = 0
@@ -2161,10 +2185,11 @@ class Fireflies:
     
     
 
-    def __init__(self, pos, count, size=10, color='#FFE87C', spread=2300):  # Added spread parameter
+    def __init__(self, pos, count, size=10, color='#FFE87C', spread=2300, speed=1):  # Added spread parameter
         self.pos = pos
         self.particles = []
         self.scale_x, self.scale_y = 36, 3.2
+        self.speed = speed
         
         # Convert color to RGB
         color_rgb = self.hex_to_rgb(color)
@@ -2198,7 +2223,7 @@ class Fireflies:
                 [color_rgb[0], color_rgb[1], color_rgb[2], 255],
                 random.uniform(0, math.pi * 2),  # Phase
                 random.uniform(0, 8 * math.pi),  # Path progress
-                random.uniform(0.001, 0.003),     # Individual speed
+                random.uniform(0.001*self.speed, 0.003*self.speed),     # Individual speed
                 particle_spread
             ])
 
@@ -2455,6 +2480,8 @@ def play_intro_sequence():
     running_menu = True
     
     play_music_long_fade(music_shroom, loops=0)
+
+    start_trigger = False
     
     
     # Show splash screen first
@@ -2493,6 +2520,11 @@ def play_intro_sequence():
                 
         if menu.render():
             menu.fading_out = True
+
+            if not start_trigger:
+                game_start_sound.play()
+                pygame.mixer.music.unload()
+                start_trigger = not start_trigger
         if menu.end_check == True:
             running_menu = False
 
@@ -2519,7 +2551,8 @@ fireflies_night = Fireflies(
     count=80,                 # Number of fireflies
     size=6,                 # Size of fireflies
     color=colors['red'][21],         # Warm yellow color
-    spread=4000
+    spread=4000,
+    speed=5
 )
 
 

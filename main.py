@@ -84,7 +84,7 @@ SNAP_SPEED = 0.5
 
 # Initialize Pygame
 pygame.mixer.init(buffer=512)
-pygame.mixer.set_num_channels(10000)
+pygame.mixer.set_num_channels(150)
 pygame.init()
 monitor_size = pygame.display.Info().current_w, pygame.display.Info().current_h
 screen = pygame.display.set_mode(monitor_size)
@@ -159,19 +159,35 @@ mushroom_image_idle = load_game_image('mushroom-idle.png', [width / 14, width / 
 # Load sounds
 shoot_sound = pygame.mixer.Sound('assets\\sound-shoot.wav')
 explode_sound = pygame.mixer.Sound('assets\\sound-explode.wav')
-select_sound = pygame.mixer.Sound('assets\\sound-select.wav')
+weapon_select_sound = pygame.mixer.Sound('assets\\sound-select.wav')
 hit_sound = pygame.mixer.Sound('assets\\sound-hit.wav')
 die_sound = pygame.mixer.Sound('assets\\sound-die.wav')
 
+mushroom_die_sound = ...
+meteor_die_sound = ...
+
 game_start_sound = pygame.mixer.Sound('assets\\sound-start.wav')
 start_select_sound = pygame.mixer.Sound('assets\\start-select.wav')
+select_sound = ...
+click_sound = ...
+
 teleport_sound = pygame.mixer.Sound('assets\\sound-teleport.wav')
+jump_sound = ...
+
+enter_day_sound = ...
+enter_night_sound = ... 
+
+
+
+
+# mixing section
 teleport_sound.set_volume(0.6)
+
 
 # soundtrack
 music_shroom = os.path.join('assets', 'shroom.mp3')
-music_forest = ...
-music_nightfalls  = ...
+music_day = ...
+music_night  = ...
 
 # Create fade effects (caching)
 fades = []
@@ -640,6 +656,7 @@ class Game:
     def save_progress(self):
         self.stardust_d = 0
         self.gamedata['stardust'] = self.stardust
+        self.gamedata['weapons'] = [1,2,2,2]
         with open('assets\\game.json', 'w') as f:
             json.dump(self.gamedata, f)
 
@@ -683,8 +700,8 @@ class Environment:
                                            self.floor_modded + self.tile_width * s], 'soil'])
         
         # Initialize environment state
-        self.current_day = 5 # start from zero since cutscene auto +1
-        self.daynight_value = 4
+        self.current_day = 0 # start from zero since cutscene auto +1
+        self.daynight_value = 0
         self.daynight = math.sin(self.daynight_value)
         self.daynight_inverse = math.cos(self.daynight_value)
         
@@ -1272,16 +1289,20 @@ class Player:
 
 
     def switch_weapon(self, con):
-        if con == 1 and self.current_weapon < len(self.weapons) - 1:
-            effects_array.append(Particles(weapon_pos, 15, size=6, speed=0.8, color=[255, 0, 255], size_change=3))
-            self.current_weapon += con
-            environment.slow_motion()
-        elif con == -1 and self.current_weapon > 0:
-            effects_array.append(Particles(weapon_pos, 15, size=6, speed=0.8, color=[255, 255, 0], size_change=3))
-            self.current_weapon += con
-            environment.slow_motion()
-        self.weapon = self.weapons[self.current_weapon]
-        select_sound.play()
+        if self.weapons:
+            print(self.weapons)
+            if con == 1 and self.current_weapon < len(self.weapons) - 1:
+                effects_array.append(Particles(weapon_pos, 15, size=6, speed=0.8, color=[255, 0, 255], size_change=3))
+                self.current_weapon += con
+                environment.slow_motion()
+                weapon_select_sound.play()
+
+            elif con == -1 and self.current_weapon > 0:
+                effects_array.append(Particles(weapon_pos, 15, size=6, speed=0.8, color=[255, 255, 0], size_change=3))
+                self.current_weapon += con
+                environment.slow_motion()
+                self.weapon = self.weapons[self.current_weapon]
+                weapon_select_sound.play()
 
     def render(self):
         # Health bar
@@ -1615,6 +1636,7 @@ class Mushroom:
 
 class Stargazer:
     def __init__(self):
+
         self.name = 'StarGazer'
         self.capacity = 40
         self.unit = self.capacity
@@ -1686,9 +1708,13 @@ class Stargazer:
             self.ready = False
             screen_shake(15)
             self.unit -= 1
+    
+    def copy(self):
+        return Stargazer()
 
 class Shotgun:
     def __init__(self):
+
         self.name = 'Hades'
         self.capacity = 3
         self.unit = self.capacity
@@ -1756,26 +1782,41 @@ class Shotgun:
             self.check = 0
             self.ready = False
             self.unit -= 1
+    
+    def copy(self):
+        return Shotgun()
 
 class WeaponShop:
     def __init__(self, pos):
-        self.weapon_arr = [Stargazer(), Shotgun()]
-        self.weapons_d = self.weapon_arr.copy()
+
+        self.weapon_dict = {1: Stargazer(), 2: Shotgun()}
+        self.weapons_d = list(self.weapon_dict.values())
         self.weapons_centered = get_centered(self.weapons_d[0].image_raw)
-        for i in range(len(self.weapons_d)):
-            self.weapons_d[i].image_raw = pygame.transform.scale(self.weapons_d[i].image_raw, [width / 5] * 2)
+        
+        for weapon in self.weapons_d:
+            weapon.image_raw = pygame.transform.scale(weapon.image_raw, [width / 5] * 2)
+
         self.image_arr = [weaponshop_image, weaponshopselect_image]
         self.image = self.image_arr[0]
         self.centered = get_centered(self.image)
         self.pos = [pos[x] - self.centered[x], pos[y] - self.centered[y] * 2]
+        
+        # Shop state
         self.ready = False
-        self.choice = 0
-        self.scroll = 0
-        for i in range(len(self.weapons_d)):
-            if i != self.choice:
-                self.weapons_d[i].image_raw.set_alpha(100)
-            else:
-                self.weapons_d[i].image_raw.set_alpha(255)
+        self.choice = None
+        self.selected_owned = None
+        
+        # Layout calculations
+        self.left_panel_width = width * 0.6
+        self.grid_cols = 3
+        self.cell_padding = 20
+        self.cell_size = (self.left_panel_width - (self.grid_cols + 1) * self.cell_padding) / self.grid_cols
+
+        self.left_panel_width = width * 0.6
+        self.right_panel_x = self.left_panel_width + 50
+        
+        self.buy_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
+        self.sell_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
 
     def update(self):
         self.ready = False
@@ -1793,47 +1834,170 @@ class WeaponShop:
 
     def run(self):
         global dt, last_frame
-        last_frame = pygame.time.get_ticks()
-        dt = 0
         r = True
+        
+        # Layout calculations
+        cell_padding = 20
+        grid_cols = 3
+        
+        # Shop section (scrollable)
+        shop_section_height = height * 0.55
+        cell_size = (self.left_panel_width - (grid_cols + 1) * cell_padding) / grid_cols
+        scroll_y = 0
+        max_scroll = max(0, (len(self.weapons_d) // grid_cols) * (cell_size + cell_padding) - shop_section_height)
+        
+        # Owned section
+        owned_section_height = height - shop_section_height
+        owned_cell_size = cell_size * 0.8
+        owned_padding = cell_padding * 0.8
+
         while r:
-            dt = delta_to_modifier(pygame.time.get_ticks() - last_frame)
             last_frame = pygame.time.get_ticks()
+            dt = 1
             mouse_pos = pygame.mouse.get_pos()
+            
             for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    game.save_progress()
-                    pygame.quit()
-                    sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        r = False
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 4:
-                        if self.choice - 1 >= 0:
-                            self.choice -= 1
-                    elif event.button == 5:
-                        if self.choice + 1 <= len(self.weapons_d) - 1:
-                            self.choice += 1
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    return None
+                    
+                if event.type == pygame.MOUSEWHEEL:
+                    scroll_y = max(0, min(scroll_y - event.y * 30, max_scroll))
+                    
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+
+                    shop_click_y = mouse_pos[1] + scroll_y
                     for i in range(len(self.weapons_d)):
-                        if i != self.choice:
-                            self.weapons_d[i].image_raw.set_alpha(100)
-                        else:
-                            self.weapons_d[i].image_raw.set_alpha(255)
+                        row = i // grid_cols
+                        col = i % grid_cols
+                        x = cell_padding + col * (cell_size + cell_padding)
+                        y = cell_padding + row * (cell_size + cell_padding)
+                        cell_rect = pygame.Rect(x, y - scroll_y, cell_size, cell_size)
+                        
+                        if cell_rect.collidepoint(mouse_pos) and mouse_pos[1] < shop_section_height:
+                            self.choice = i
+                            self.selected_owned = None
+                    
+                    # Handle owned weapons selection
+                    for i in range(len(player.weapons)):
+                        row = i // grid_cols
+                        col = i % grid_cols
+                        x = owned_padding + col * (owned_cell_size + owned_padding)
+                        y = shop_section_height + owned_padding + row * (owned_cell_size + owned_padding)
+                        cell_rect = pygame.Rect(x, y, owned_cell_size, owned_cell_size)
+                        
+                        if cell_rect.collidepoint(mouse_pos):
+                            self.selected_owned = i
+                            self.choice = None
+                    
+                    # Handle buy/sell buttons
+                    if self.choice is not None and self.buy_button.collidepoint(mouse_pos):
+                        player.weapons.append(self.weapon_dict[self.choice + 1].copy())
+                        player.current_weapon = self.choice
+                    elif self.selected_owned is not None and self.sell_button.collidepoint(mouse_pos):
+                        player.weapons.pop(self.selected_owned)
+                        player.current_weapon = self.selected_owned-1
+                        self.selected_owned = None
+
             screen.fill(BLACK)
-            tposy = height * 3 / 4 / 2
-            draw_text_sizeable(self.weapons_d[self.choice].name, width * 3 / 4, tposy, size=width / 20)
-            draw_text(f'DMG {self.weapons_d[self.choice].damage}', width * 2 / 3, tposy + 100)
-            draw_text(f'RELOAD {self.weapons_d[self.choice].reset_time}', width * 2 / 3, tposy + 170)
-            self.posy = height / 3 * self.choice
-            self.scroll += (self.posy - self.scroll) / 10 * dt
+            
+            # Draw shop section
+            shop_surface = pygame.Surface((self.left_panel_width, shop_section_height))
+            shop_surface.fill(BLACK)
+            
+            # Draw shop grid with scroll
             for i in range(len(self.weapons_d)):
-                p = height / 2 - self.scroll + height / 3 * i - self.weapons_centered[y] * 2
-                screen.blit(self.weapons_d[i].image_raw, [width / 4, p])
-            game.render_ui()
+                row = i // grid_cols
+                col = i % grid_cols
+                x = cell_padding + col * (cell_size + cell_padding)
+                y = cell_padding + row * (cell_size + cell_padding) - scroll_y
+                
+                if -cell_size < y < shop_section_height:
+                    cell_rect = pygame.Rect(x, y, cell_size, cell_size)
+                    pygame.draw.rect(shop_surface, colors['green'][20], cell_rect)
+                    
+                    if i == self.choice:
+                        pygame.draw.rect(shop_surface, colors['green'][10], cell_rect, 3)
+                    elif cell_rect.collidepoint((mouse_pos[0], mouse_pos[1])):
+                        pygame.draw.rect(shop_surface, colors['green'][15], cell_rect, 3)
+                    
+                    weapon = self.weapons_d[i]
+                    weapon_scaled = pygame.transform.scale(weapon.image_raw, 
+                        (int(cell_size * 0.8), int(cell_size * 0.8)))
+                    shop_surface.blit(weapon_scaled, 
+                        (x + cell_size * 0.1, y + cell_size * 0.1))
+            
+            screen.blit(shop_surface, (0, 0))
+            
+            # Draw separators
+            pygame.draw.line(screen, colors['green'][1], 
+                            (0, shop_section_height), 
+                            (self.left_panel_width, shop_section_height), 2)
+            pygame.draw.line(screen, colors['green'][1],
+                            (self.left_panel_width, 0),
+                            (self.left_panel_width, height), 2)
+            
+            for i in range(len(player.weapons)):
+                row = i // grid_cols
+                col = i % grid_cols
+                x = owned_padding + col * (owned_cell_size + owned_padding)
+                y = shop_section_height + owned_padding*2 + row * (owned_cell_size + owned_padding)
+                cell_rect = pygame.Rect(x, y, owned_cell_size, owned_cell_size)
+                
+                pygame.draw.rect(screen, colors['blue'][20], cell_rect)
+                
+                if i == self.selected_owned:
+                    pygame.draw.rect(screen, colors['blue'][10], cell_rect, 3)
+                elif cell_rect.collidepoint(mouse_pos):
+                    pygame.draw.rect(screen, colors['blue'][15], cell_rect, 3)
+                
+                weapon = player.weapons[i]
+                weapon_scaled = pygame.transform.scale(weapon.image_raw,
+                    (int(owned_cell_size * 0.8), int(owned_cell_size * 0.8)))
+                screen.blit(weapon_scaled,
+                    (x + owned_cell_size * 0.1, y + owned_cell_size * 0.1))
+            
+            # Draw owned section
+            draw_text("OWNED WEAPONS", owned_padding, 
+                        shop_section_height + owned_padding/2, color=colors['blue'][1])
+            
+            # Draw right panel info
+            if self.choice is not None:
+                selected_weapon = self.weapons_d[self.choice]
+                preview_size = height * 0.3
+                weapon_preview = pygame.transform.scale(selected_weapon.image_raw, 
+                                                        (preview_size, preview_size))
+                screen.blit(weapon_preview, (self.right_panel_x, height * 0.1))
+                
+                draw_text(f"Name: {selected_weapon.name}", self.right_panel_x, height * 0.5)
+                draw_text(f"Damage: {selected_weapon.damage}", self.right_panel_x, height * 0.5 + 40)
+                draw_text(f"Reload: {selected_weapon.reset_time}s", self.right_panel_x, height * 0.5 + 80)
+                draw_text(f"Magazine: {selected_weapon.capacity}", self.right_panel_x, height * 0.5 + 120)
+                
+                self.buy_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
+                pygame.draw.rect(screen, colors['green'][20],self.buy_button)
+                draw_text('BUY', self.right_panel_x + 70, height * 0.81)
+                
+            elif self.selected_owned is not None:
+                selected_weapon = player.weapons[self.selected_owned]
+                preview_size = height * 0.3
+                weapon_preview = pygame.transform.scale(selected_weapon.image_raw, 
+                                                        (preview_size, preview_size))
+                screen.blit(weapon_preview, (self.right_panel_x, height * 0.1))
+                
+                draw_text(f"Name: {selected_weapon.name}", self.right_panel_x, height * 0.5)
+                draw_text(f"Damage: {selected_weapon.damage}", self.right_panel_x, height * 0.5 + 40)
+                draw_text(f"Reload: {selected_weapon.reset_time}s", self.right_panel_x, height * 0.5 + 80)
+                draw_text(f"Magazine: {selected_weapon.capacity}", self.right_panel_x, height * 0.5 + 120)
+                
+                self.sell_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
+                pygame.draw.rect(screen, colors['red'][20], self.sell_button)
+                draw_text('SELL', self.right_panel_x + 70, height * 0.81)
+            
             draw_circle(mouse_pos)
             pygame.display.update()
             clock.tick(-1)
+
+    
 
 class Bullet:
     def __init__(self, recoil=50, damage=10, speed=50, image=shotgun_bullet_image,
@@ -2573,9 +2737,10 @@ weapon_player_displacement = [0, 0]
 weapon_angle = 0
 weapon_rotation = 0
 
+weapon_shop = WeaponShop([width / 2, floor])
 
 buildings_array = [
-    WeaponShop([width / 2, floor]),
+    weapon_shop,
 
             ]
 
@@ -2591,9 +2756,9 @@ entities_array = []
 effects_array = [killstreak]
 
 
-
-
-player.weapons = [Stargazer(), Shotgun()]
+player_weapon_id = game.gamedata['weapons']
+for id in player_weapon_id:
+    player.weapons.append(weapon_shop.weapon_dict[id].copy())
 
 environment = Environment()
 weapon = player.weapons[player.current_weapon]
@@ -2696,13 +2861,6 @@ while True:
     cursor_angle = math.atan2(cursor_player_displacement[0], cursor_player_displacement[1])
     cursor_rotation = (180 / math.pi) * cursor_angle - 90
 
-    weapon_pos = [weapon.image.get_width() * -0.1 * math.sin(cursor_angle) + player_pos_raw[x],
-                 weapon.image.get_height() * -0.2 * math.cos(cursor_angle) + player_pos_raw[y] + hip]
-    weapon_player_displacement = [mouse_pos[x] - weapon_pos[x] - offset[x], 
-                                mouse_pos[y] - weapon_pos[y] - offset[y]]
-    weapon_angle = math.atan2(weapon_player_displacement[x], weapon_player_displacement[y])
-    weapon_rotation = (180 / math.pi) * weapon_angle - 90
-
     # Render game world
     environment.render()
 
@@ -2733,8 +2891,19 @@ while True:
     # Update and render player and weapon
     player.update()
     player.render()
-    weapon.update()
-    weapon.render()
+
+    if player.weapons:
+        weapon = player.weapons[player.current_weapon]
+        weapon_pos = [weapon.image.get_width() * -0.1 * math.sin(cursor_angle) + player_pos_raw[x],
+                    weapon.image.get_height() * -0.2 * math.cos(cursor_angle) + player_pos_raw[y] + hip]
+        weapon_player_displacement = [mouse_pos[x] - weapon_pos[x] - offset[x], 
+                                    mouse_pos[y] - weapon_pos[y] - offset[y]]
+        weapon_angle = math.atan2(weapon_player_displacement[x], weapon_player_displacement[y])
+        weapon_rotation = (180 / math.pi) * weapon_angle - 90
+
+
+        weapon.update()
+        weapon.render()
 
     # Render effects and UI
     draw_circle(mouse_pos)
@@ -2745,7 +2914,8 @@ while True:
         effect.render()
 
     # Render HUD and UI elements
-    weapon.render_hud()
+    if player.weapons:
+        weapon.render_hud()
     game.render_ui()
     environment.render_effects()
 

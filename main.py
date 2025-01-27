@@ -158,6 +158,8 @@ mushroom_image_idle = load_game_image('mushroom-idle.png', [width / 14, width / 
 
 # Load sounds
 shoot_sound = pygame.mixer.Sound('assets\\sound-shoot.wav')
+shoot_sound_2 = pygame.mixer.Sound('assets\\sound-shoot-2.wav')
+
 explode_sound = pygame.mixer.Sound('assets\\sound-explode.wav')
 weapon_select_sound = pygame.mixer.Sound('assets\\sound-select.wav')
 hit_sound = pygame.mixer.Sound('assets\\sound-hit.wav')
@@ -181,7 +183,9 @@ enter_night_sound = ...
 
 
 # mixing section
-teleport_sound.set_volume(0.6)
+teleport_sound.set_volume(0.1)
+shoot_sound.set_volume(0.6)
+shoot_sound_2.set_volume(0.6)
 
 
 # soundtrack
@@ -1290,7 +1294,6 @@ class Player:
 
     def switch_weapon(self, con):
         if self.weapons:
-            print(self.weapons)
             if con == 1 and self.current_weapon < len(self.weapons) - 1:
                 effects_array.append(Particles(weapon_pos, 15, size=6, speed=0.8, color=[255, 0, 255], size_change=3))
                 self.current_weapon += con
@@ -1638,11 +1641,11 @@ class Stargazer:
     def __init__(self):
 
         self.name = 'StarGazer'
-        self.capacity = 40
+        self.capacity = 50
         self.unit = self.capacity
-        self.damage = 7
+        self.damage = 15
         self.check = 3
-        self.reset_time = 2
+        self.reset_time = 3
         self.cd_time = 40
         self.cd = 0
         self.ready = False
@@ -1718,7 +1721,7 @@ class Shotgun:
         self.name = 'Hades'
         self.capacity = 3
         self.unit = self.capacity
-        self.damage = 20
+        self.damage = 25
         self.check = 60
         self.ready = False
         self.cd_time = 80
@@ -1778,7 +1781,7 @@ class Shotgun:
                 render_array.append(Bullet(recoil=200, exploded_color=[255, 0, 0],
                                         shake=30, speed=30, damage=dmg, critical=c))
             screen_shake(50)
-            shoot_sound.play()
+            shoot_sound_2.play()
             self.check = 0
             self.ready = False
             self.unit -= 1
@@ -2842,7 +2845,7 @@ while True:
     else:
         moving_L = False
 
-    if pygame.mouse.get_pressed()[0]:
+    if pygame.mouse.get_pressed()[0] and player.weapons:
         weapon.attack()
 
     # Camera and player position updates

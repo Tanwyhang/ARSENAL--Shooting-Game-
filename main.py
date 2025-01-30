@@ -183,9 +183,9 @@ enter_night_sound = ...
 
 
 # mixing section
-teleport_sound.set_volume(0.1)
-shoot_sound.set_volume(0.6)
-shoot_sound_2.set_volume(0.6)
+teleport_sound.set_volume(0.18)
+shoot_sound.set_volume(0.8)
+shoot_sound_2.set_volume(0.8)
 
 
 # soundtrack
@@ -575,7 +575,7 @@ class MainMenu:
                 start_select_sound.play()
                 self.trigger = not self.trigger
             self.target_alpha = self.hover_alpha
-            self.button_image_index = min(main_menu_button_images_count-1, self.button_image_index + 1)
+            self.button_image_index = min(main_menu_button_images_count-1, self.button_image_index + 2)
             self.button_image = self.button_images[self.button_image_index]
 
 
@@ -680,7 +680,11 @@ class Environment:
         self.tile_count = 150
         self.mountains = mountain_image
         self.mountain_pos_x = 0
-        self.mountain_pos_x_base = 0
+        self.offset_for_teleport = 0
+        self.mount_offset = offset[x]
+
+        self.left_boundary = 0 - 30 * self.tile_width
+        self.right_boundary = 30 * self.tile_width 
         
         # Effect states
         self.fading_in = False
@@ -751,6 +755,7 @@ class Environment:
         self.cutscene_surface = pygame.Surface((width, height), pygame.SRCALPHA)
     
     def play_day_cutscene(self):
+
         cutscene_running = True
         last_time = pygame.time.get_ticks()
         cutscene_start_time = last_time
@@ -992,10 +997,28 @@ class Environment:
 
     def render(self):
         screen.fill(self.background_color)
-        for i in range(3):
-            screen.blit(self.mountains, 
-                       [offset[x] / 10 - width + width * i + self.mountain_pos_x, 
-                        offset[y] / 3])
+
+        mount_offset_x_target = -player.steps + width / 2 - mouse_pos[0] * 0.8 + width * 0.4 + cam_osc[x] + self.offset_for_teleport
+        self.mount_offset += (mount_offset_x_target - self.mount_offset) * 0.1 * dt
+
+        # Draw mountains
+        
+        for i in range(-15, 15):  # Render mountains from -15 to 15
+            # Calculate the x-position for the current mountain
+            x_position = width * i - width + self.mount_offset * 0.1
+
+            # Only render mountains near the displayable screen
+            if -width <= x_position <= width * 2:
+                screen.blit(
+                    self.mountains,
+                    [x_position, offset[y] / 3]
+                )
+
+        
+        # Draw boundary indicators
+        left_boundary_x = environment.left_boundary # Left boundary
+        right_boundary_x = environment.right_boundary # Right boundary
+        
 
     def spawn_mushrooms(self):
         a = [-width, -width / 3]
@@ -1188,9 +1211,8 @@ class Player:
         self.centered = self.width / 2, self.height / 2
         self.flipped = False
 
-        # Add map constraints
-        self.map_start = -width * 2  # Left boundary
-        self.map_end = width * 3  # Right boundary
+        
+
         self.last_safe_y = self.pos[y]  # For void fall recovery
     
 
@@ -1201,14 +1223,7 @@ class Player:
             self.hit_timer = 0
             if self.current_health <= 0:
                 self.current_health = 0
-                # Add death handling here if needed
-            effects_array.append(Particles(
-                [player_pos_raw[x], player_pos_raw[y]], 
-                count=15, 
-                color=[255, 0, 0], 
-                size=6,
-                gravity=True
-            ))
+        # death handling
     
     def update(self):
         # Add this to your existing update method
@@ -1224,20 +1239,31 @@ class Player:
         if self.gravity < 20 and self.pos[y] < floor - self.height:
             self.gravity += 2 * dt
         
-
+        offset_delta = 0
         # Handle map wrapping
-        if self.steps < self.map_start:
+        if self.steps < environment.left_boundary:
             # If player goes too far left, wrap to right
-            self.steps = self.map_end
+            self.steps += environment.right_boundary - environment.left_boundary
+            environment.offset_for_teleport += environment.right_boundary - environment.left_boundary
 
+            offset_target[x] = -player.steps + width / 2 - mouse_pos[0] * 0.8 + width * 0.4 + cam_osc[x]
+            offset_delta = offset_target[x] - offset[x]
+            offset[x] = offset_target[x] + self.velo_x * 10
+                
 
-        elif self.steps > self.map_end:
+        elif self.steps > environment.right_boundary:
             # If player goes too far right, wrap to left
-            self.steps = self.map_start
+            self.steps -= environment.right_boundary - environment.left_boundary
+            environment.offset_for_teleport -= environment.right_boundary - environment.left_boundary
+
+            offset_target[x] = -player.steps + width / 2 - mouse_pos[0] * 0.8 + width * 0.4 + cam_osc[x]
+            offset[x] = offset_target[x] + self.velo_x * 10        
+
+
 
         # Handle void falling
         if self.pos[y] > height * 1.5:  # If fallen too far
-            self.pos[y] = floor - self.height  # Reset to floor level
+            self.pos[y] = floor - self.height # Reset to floor level
             self.steps = width / 2  # Center horizontally
             self.gravity = 0  # Reset gravity
             self.jump_count = 0  # Reset jumps
@@ -1277,15 +1303,20 @@ class Player:
         self.image = pygame.transform.rotate(self.image_raw, self.rotation)
 
     def jump(self):
-        if self.jump_count < 7:
+        if self.jump_count < 4:
             
             effects_array.append(GlowingParticles([player_pos_raw[x], player_pos_raw[y] + player.height], 5, size=6))
 
-            if self.jump_count % 2 == 1:
-                self.velo_x *= 80
+            if self.jump_count > 0:
+
+                if not (moving_R or moving_L):
+                    self.velo_x = [300, -300][self.jump_count % 2] / dt
+                else:
+                    self.velo_x = 300 / dt if moving_R else 300 / dt * -1
                 self.velo_y = 0
                 teleport_sound.play()
-                effects_array.append(Explosion([player_pos_raw[x], player_pos_raw[y]], count=15, size=1, color_base=colors['blue'][21], phase=30))
+                effects_array.append(Explosion([player_pos_raw[x], player_pos_raw[y]], count=15, size=0.9, color_base=colors['blue'][21], phase=20))
+                environment.slow_motion(time=6)
             else:
                 self.gravity = -30
 
@@ -1797,9 +1828,9 @@ class WeaponShop:
         self.weapons_centered = get_centered(self.weapons_d[0].image_raw)
         
         for weapon in self.weapons_d:
-            weapon.image_raw = pygame.transform.scale(weapon.image_raw, [width / 5] * 2)
+            weapon.image_raw = pygame.transform.scale(weapon.image_raw, [width/5] * 2)
 
-        self.image_arr = [weaponshop_image, weaponshopselect_image]
+        self.image_arr = [pygame.transform.scale(weaponshop_image, [weaponshop_image.get_width() * (height * 0.45)/weaponshop_image.get_height(), height * 0.45]), weaponshopselect_image]
         self.image = self.image_arr[0]
         self.centered = get_centered(self.image)
         self.pos = [pos[x] - self.centered[x], pos[y] - self.centered[y] * 2]
@@ -1810,7 +1841,7 @@ class WeaponShop:
         self.selected_owned = None
         
         # Layout calculations
-        self.left_panel_width = width * 0.6
+        self.left_panel_width = width * 0.75
         self.grid_cols = 3
         self.cell_padding = 20
         self.cell_size = (self.left_panel_width - (self.grid_cols + 1) * self.cell_padding) / self.grid_cols
@@ -1820,6 +1851,10 @@ class WeaponShop:
         
         self.buy_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
         self.sell_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
+
+        self.scroll_inventory = 0
+        self.scroll_shop = 0
+
 
     def update(self):
         self.ready = False
@@ -1864,7 +1899,7 @@ class WeaponShop:
                     return None
                     
                 if event.type == pygame.MOUSEWHEEL:
-                    scroll_y = max(0, min(scroll_y - event.y * 30, max_scroll))
+                    self.scroll_inventory = max(0, min(scroll_y - event.y * 30, max_scroll))
                     
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
 
@@ -2698,6 +2733,10 @@ def play_intro_sequence():
         pygame.display.flip()
         clock.tick(60)
 
+offset_target = [0, 0]
+offset = [0, height * 10]
+moving_L = False
+moving_R = False
 
 # Initialize game objects
 player = Player()
@@ -2726,10 +2765,6 @@ fireflies_night = Fireflies(
 dt = 1 # pre initialise dt before any class to prevent dt not defined
 bg_pos = 0
 bg_pos_targ = 0
-offset_target = [0, 0]
-offset = [0, height * 10]
-moving_L = False
-moving_R = False
 player_pos_raw = [0, 0]
 player_pos = [0, 0]
 cursor_angle = 0
@@ -2740,7 +2775,7 @@ weapon_player_displacement = [0, 0]
 weapon_angle = 0
 weapon_rotation = 0
 
-weapon_shop = WeaponShop([width / 2, floor])
+weapon_shop = WeaponShop([-width*1.5, floor])
 
 buildings_array = [
     weapon_shop,
@@ -2850,7 +2885,7 @@ while True:
 
     # Camera and player position updates
     offset_target = [-player.steps + width / 2 - mouse_pos[0] * 0.8 + width * 0.4 + cam_osc[x],
-                    -player.attitude + height * 0.8 - mouse_pos[1] * 0.8 + height * 0.4 + cam_osc[y]]
+                    -player.attitude + height * 0.8 - mouse_pos[1] * 0.8 + height * 0.25 + cam_osc[y]]
     offset[x] += ((offset_target[x] - offset[x]) / 10) * dt
     offset[y] += ((offset_target[y] - offset[y]) / 20) * dt
     player.pos[x] = player_pos[x]

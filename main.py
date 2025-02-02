@@ -127,6 +127,8 @@ weaponshop_image = load_game_image('weaponshop.png', [height / 2, height / 2])
 weaponshopselect_image = load_game_image('weaponshop_s.png', [height / 2, height / 2])
 stargazer_image = load_game_image('weapon-stargazer.png')
 shotgun_image = load_game_image('weapon-shotgun.png')
+zeus_image = load_game_image('weapon-zeus.png')
+
 stargazer_bullet_image = load_game_image('bullet-stargazer.png', [width / 30, width / 30])
 shotgun_bullet_image = load_game_image('bullet-shotgun.png', [width / 30, width / 30])
 player_image = load_game_image('player.png', [width / 10, width / 10])
@@ -232,6 +234,12 @@ def draw_text(string, x, y, color=WHITE):
     textRect.topleft = [x, y]
     screen.blit(text, textRect)
 
+def draw_text_centered(string, x, y, color=WHITE):
+    text = font.render(string, True, color)
+    textRect = text.get_rect()
+    textRect.center = [x, y]
+    screen.blit(text, textRect)
+
 def draw_circle(pos):
     pygame.draw.circle(screen, WHITE, pos, width / 50, int(width / 200))
 
@@ -253,6 +261,47 @@ def draw_bar(pos, a, b, size=1, color=colors['red'][19], border=1, line=False):
                            [pos[x] + n * (1 + i), pos[y]],
                            [pos[x] + n * (1 + i), pos[y] + height / 50 * size - 2.5 * border],
                            1 + int(7 / b))
+
+def draw_progress_bar(pos, current, maximum, size=1, color=colors['blue'][19], border=1, line=False):
+    if current >= maximum:
+        current = maximum
+        
+    # Calculate base dimensions
+    bar_width = width / 20 * size
+    bar_height = height / 50 * size
+    border_width = 3
+    
+    # Draw the outer rectangle (border)
+    r_fixed = pygame.Rect(pos[x], pos[y], bar_width, bar_height)
+    
+    # Draw the inner progress bar
+    progress = current / maximum
+    if current != 1:
+        r = pygame.Rect(
+            pos[x], 
+            pos[y], 
+            min(bar_width * progress, bar_width - border_width),
+            bar_height - border_width
+        )
+    else:
+        r = pygame.Rect(
+            pos[x] + 2.5 * border, 
+            pos[y], 
+            min(bar_width * progress, bar_width - border_width),
+            bar_height - border_width
+        )
+        
+    pygame.draw.rect(screen, color, r)
+    pygame.draw.rect(screen, BLACK, r_fixed, 3)
+    
+    # Draw dividing lines if requested
+    if line:
+        segment_width = size * (bar_width / maximum)
+        for i in range(maximum - 1):
+            pygame.draw.line(screen, BLACK,
+                           [pos[x] + segment_width * (1 + i), pos[y]],
+                           [pos[x] + segment_width * (1 + i), pos[y] + bar_height - 2.5 * border],
+                           1 + int(7 / maximum))
 
 
 class SplashScreen:
@@ -660,7 +709,7 @@ class Game:
     def save_progress(self):
         self.stardust_d = 0
         self.gamedata['stardust'] = self.stardust
-        self.gamedata['weapons'] = [1,2,2,2]
+        self.gamedata['weapons'] = [weapon.id for weapon in player.weapons]
         with open('assets\\game.json', 'w') as f:
             json.dump(self.gamedata, f)
 
@@ -1310,7 +1359,7 @@ class Player:
             if self.jump_count > 0:
 
                 if not (moving_R or moving_L):
-                    self.velo_x = [300, -300][self.jump_count % 2] / dt
+                    self.velo_x = [300, -300][(self.jump_count + 1) % 2] / dt if self.flipped else [300, -300][(self.jump_count) % 2] / dt
                 else:
                     self.velo_x = 300 / dt if moving_R else 300 / dt * -1
                 self.velo_y = 0
@@ -1430,11 +1479,18 @@ class Meteor:
                 dy / distance * speed
             ]
 
-
+    # for bullets
     def get_hit(self, obj):
         self.tpos[x] = self.pos[x] + (math.sin(weapon_angle)) * obj.damage * 10
         self.tpos[y] = self.pos[y] + (math.cos(weapon_angle)) * obj.damage * 10
         self.hp -= obj.damage
+        hit_sound.play()
+        self.hitted = True
+    
+    def take_damage(self, dmg, strength):
+        self.tpos[x] = self.pos[x] + (math.sin(cursor_angle)) * 10 * strength
+        self.tpos[y] = self.pos[y] + (math.cos(cursor_angle)) * 10 * strength
+        self.hp -= dmg
         hit_sound.play()
         self.hitted = True
 
@@ -1650,6 +1706,13 @@ class Mushroom:
     def jump(self):
         self.jumping = True
         self.gravity = -16
+    
+    def take_damage(self, dmg, strength):
+        self.tpos[x] = self.pos[x] + (math.sin(cursor_angle)) * 10 * strength
+        self.tpos[y] = self.pos[y] + (math.cos(cursor_angle)) * 10 * strength
+        self.hp -= dmg
+        hit_sound.play()
+        self.hitted = True
 
     def end(self):
         
@@ -1671,16 +1734,24 @@ class Mushroom:
 class Stargazer:
     def __init__(self):
 
+        self.id = 1
+
         self.name = 'StarGazer'
         self.capacity = 50
         self.unit = self.capacity
         self.damage = 15
+        self.cost = 10000
+
+
+
+
         self.check = 3
         self.reset_time = 3
         self.cd_time = 40
         self.cd = 0
         self.ready = False
         self.image_raw = stargazer_image.copy()
+        self.image_ori = self.image_raw.copy()
         self.image_raw = pygame.transform.scale(self.image_raw, [width * 0.1, width * 0.1])
         self.image = pygame.transform.rotate(self.image_raw, weapon_rotation)
         self.width = self.image.get_width()
@@ -1749,16 +1820,22 @@ class Stargazer:
 class Shotgun:
     def __init__(self):
 
+        self.id = 2
+
         self.name = 'Hades'
         self.capacity = 3
         self.unit = self.capacity
         self.damage = 25
+        self.cost = 10000
+
+
         self.check = 60
         self.ready = False
         self.cd_time = 80
         self.cd = 0
         self.reset_time = 10
         self.image_raw = shotgun_image.copy()
+        self.image_ori = self.image_raw.copy()
         self.image_raw = pygame.transform.scale(self.image_raw, [width * 0.1, width * 0.1])
         self.image = pygame.transform.rotate(self.image_raw, weapon_rotation)
         self.width = self.image.get_width()
@@ -1820,10 +1897,131 @@ class Shotgun:
     def copy(self):
         return Shotgun()
 
+
+class SpinningBlade:
+    def __init__(self):
+        self.id = 3
+        self.name = 'Zeus'
+        self.capacity = 1  # Number of spins before cooldown
+        self.unit = self.capacity
+        self.damage = 69
+        self.cost = 15000
+
+        # Spin attack properties
+        self.spinning = False
+        self.spin_angle = 0
+        self.spin_speed = 1.2  # Complete 720 degrees in 30 frames
+        self.spin_radius = 400  # Area of effect radius
+        self.current_spin = 0
+        
+        self.check = 60
+        self.ready = False
+        self.cd_time = 10  # Longer cooldown than shotgun due to power
+        self.cd = 0
+        self.reset_time = 10
+        self.image_raw = zeus_image.copy()  # Assuming you have a blade image
+        self.image_ori = self.image_raw.copy()
+
+        self.image_raw = pygame.transform.scale(self.image_raw, [width * 0.11, width * 0.11])
+        self.image = pygame.transform.rotate(self.image_raw, weapon_rotation)
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
+        self.centered = self.image_raw.get_width() / 2, self.image_raw.get_height() / 2
+        self.pos = weapon_pos
+        self.flipped = False
+        self.image_base = self.image_raw
+
+    def update(self):
+        self.check += 1 * dt
+        self.pos = weapon_pos
+        
+        if self.spinning:
+            # Update spin animation
+            self.spin_angle += (720 * self.spin_speed - self.spin_angle) / 10 * dt
+            if self.spin_angle >= 720:
+                self.spinning = False
+                self.spin_angle = 0
+                self.ready = False
+                self.unit -= 1
+            # During spin, override normal rotation with spin animation
+            self.image = pygame.transform.rotate(self.image_raw, self.spin_angle + weapon_rotation)
+        else:
+            # Normal weapon following cursor
+            self.image = pygame.transform.rotate(self.image_raw, weapon_rotation)
+            
+        self.centered = self.image.get_width() / 2, self.image.get_height() / 2
+        
+        # Handle weapon flip based on cursor angle
+        if cursor_angle < 0:
+            if not self.flipped:
+                self.image_raw = pygame.transform.flip(self.image_raw, False, True)
+                self.flipped = True
+        elif self.flipped:
+            self.image_raw = pygame.transform.flip(self.image_raw, False, True)
+            self.flipped = False
+            
+        # Ready state and cooldown management
+        if self.check > self.reset_time and not self.ready:
+            self.ready = True
+        if self.unit == 0:
+            self.cd += 1 * dt
+            if self.cd >= self.cd_time:
+                self.cd = 0
+                self.unit = self.capacity
+
+    def render(self):
+        # Draw the weapon
+        screen.blit(self.image, [self.pos[x] - self.centered[x] + offset[x],
+                    self.pos[y] - self.centered[y] + offset[y]])
+
+    def render_hud(self):
+
+        draw_progress_bar([20 * scale_width, 20 * scale_height], self.unit,
+                self.capacity, size=2.5, color=colors['blue'][19], line=True)
+        draw_bar([20 * scale_width, 70 * scale_height], self.cd,
+                self.cd_time, size=2.5, color=colors['red'][19])
+        screen.blit(self.image_base, [30 * scale_width, 70 * scale_height])
+        draw_text(f'{self.unit} / {self.capacity}', 230 * scale_width, 30 * scale_height)
+
+    def attack(self):
+        if self.ready and self.unit > 0 and not self.spinning:
+            self.spinning = True
+            self.spin_angle = 0
+
+            
+            
+            # Apply area damage to all enemies within spin radius
+            for entities in entities_array:  # Assuming you have an enemies list
+                for entity in entities:
+                    # Calculate distance to entity
+                    dx = entity.pos[x] - self.pos[x]
+                    dy = entity.pos[y] - self.pos[y]
+                    distance = math.sqrt(dx**2 + dy**2)
+                    
+                    # If entity is within spin radius, apply damage
+                    if distance <= self.spin_radius:
+                        dmg = self.damage
+                        # Critical hit chance
+                        if random.randint(1, 7) == 5:
+                            dmg **= 1.2
+                            entity.take_damage(dmg, 50)
+                        else:
+                            entity.take_damage(dmg, 30)
+                        effects_array.append(Damage_text(dmg, entity.pos, 
+                                                   critical=True))
+            
+            screen_shake(30)
+            # Assuming you have a swing sound
+            shoot_sound.play()
+    
+    def copy(self):
+        return SpinningBlade()
+
+
 class WeaponShop:
     def __init__(self, pos):
-
-        self.weapon_dict = {1: Stargazer(), 2: Shotgun()}
+        self.weapons_d = [Stargazer(), Shotgun(), SpinningBlade()]
+        self.weapon_dict = {weapon.id: weapon for weapon in self.weapons_d}
         self.weapons_d = list(self.weapon_dict.values())
         self.weapons_centered = get_centered(self.weapons_d[0].image_raw)
         
@@ -1841,20 +2039,27 @@ class WeaponShop:
         self.selected_owned = None
         
         # Layout calculations
-        self.left_panel_width = width * 0.75
-        self.grid_cols = 3
-        self.cell_padding = 20
+        self.left_panel_width = width * 0.6
+        self.grid_cols = 4
+        self.cell_padding = 30
         self.cell_size = (self.left_panel_width - (self.grid_cols + 1) * self.cell_padding) / self.grid_cols
 
-        self.left_panel_width = width * 0.6
         self.right_panel_x = self.left_panel_width + 50
         
         self.buy_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
         self.sell_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
 
+        # Scroll positions for both sections
         self.scroll_inventory = 0
+        self.scroll_inventory_target = 0
         self.scroll_shop = 0
-
+        
+        
+        # Calculate max scroll values
+        self.shop_section_height = height * 0.55
+        self.owned_section_height = height - self.shop_section_height
+        
+        # Max scroll calculations will be updated in run() based on content
 
     def update(self):
         self.ready = False
@@ -1875,68 +2080,120 @@ class WeaponShop:
         r = True
         
         # Layout calculations
-        cell_padding = 20
-        grid_cols = 3
-        
-        # Shop section (scrollable)
-        shop_section_height = height * 0.55
-        cell_size = (self.left_panel_width - (grid_cols + 1) * cell_padding) / grid_cols
-        scroll_y = 0
-        max_scroll = max(0, (len(self.weapons_d) // grid_cols) * (cell_size + cell_padding) - shop_section_height)
-        
+        cell_padding = self.cell_padding
+        grid_cols = self.grid_cols
+        shop_section_height = self.shop_section_height
+        cell_size = self.cell_size
+
         # Owned section
         owned_section_height = height - shop_section_height
-        owned_cell_size = cell_size * 0.8
-        owned_padding = cell_padding * 0.8
+        owned_cell_size = cell_size * 0.85
+        owned_padding = cell_padding * 0.85
+        
+        # Calculate max scroll values
+        max_scroll_shop = max(0, ((len(self.weapons_d) - 1) // grid_cols + 1) * (cell_size + cell_padding) - shop_section_height)
+        max_scroll_inventory = (owned_cell_size + owned_padding) * ((len(player.weapons) - 1) // 4)
+
 
         while r:
             last_frame = pygame.time.get_ticks()
             dt = 1
             mouse_pos = pygame.mouse.get_pos()
+
+            # update inventory scroll
+            self.scroll_inventory += (self.scroll_inventory_target - self.scroll_inventory) / 20 * dt
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                     return None
                     
                 if event.type == pygame.MOUSEWHEEL:
-                    self.scroll_inventory = max(0, min(scroll_y - event.y * 30, max_scroll))
+                    # Determine which section to scroll based on mouse position
+                    if mouse_pos[1] < shop_section_height:
+                        self.scroll_shop = max(0, min(self.scroll_shop - event.y * 20, max_scroll_shop))
+                    else:
+                        self.scroll_inventory_target = max(0, min(self.scroll_inventory_target - event.y * 20, max_scroll_inventory))
                     
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-
-                    shop_click_y = mouse_pos[1] + scroll_y
+                    # Shop section clicks
                     for i in range(len(self.weapons_d)):
                         row = i // grid_cols
                         col = i % grid_cols
                         x = cell_padding + col * (cell_size + cell_padding)
-                        y = cell_padding + row * (cell_size + cell_padding)
-                        cell_rect = pygame.Rect(x, y - scroll_y, cell_size, cell_size)
+                        y = cell_padding + row * (cell_size + cell_padding) - self.scroll_shop
+
+                        cell_rect = pygame.Rect(x, y, cell_size, cell_size)
                         
                         if cell_rect.collidepoint(mouse_pos) and mouse_pos[1] < shop_section_height:
                             self.choice = i
                             self.selected_owned = None
                     
-                    # Handle owned weapons selection
+                    # Owned weapons clicks
                     for i in range(len(player.weapons)):
                         row = i // grid_cols
                         col = i % grid_cols
                         x = owned_padding + col * (owned_cell_size + owned_padding)
-                        y = shop_section_height + owned_padding + row * (owned_cell_size + owned_padding)
+                        y = shop_section_height + owned_padding + row * (owned_cell_size + owned_padding) - self.scroll_inventory
                         cell_rect = pygame.Rect(x, y, owned_cell_size, owned_cell_size)
                         
                         if cell_rect.collidepoint(mouse_pos):
                             self.selected_owned = i
                             self.choice = None
-                    
+
                     # Handle buy/sell buttons
+
+                    # BUY
                     if self.choice is not None and self.buy_button.collidepoint(mouse_pos):
-                        player.weapons.append(self.weapon_dict[self.choice + 1].copy())
-                        player.current_weapon = self.choice
+
+                        if game.stardust >= self.weapons_d[self.choice].cost:
+                            player.weapons.append(self.weapon_dict[self.choice + 1].copy())
+                            player.current_weapon = len(player.weapons) - 1
+                            max_scroll_inventory = (owned_cell_size + owned_padding) * ((len(player.weapons) - 1) // 4)
+
+                            self.scroll_inventory_target = (owned_cell_size + owned_padding) * ((len(player.weapons) - 1) // 4)
+                            game.stardust -= self.weapons_d[self.choice].cost
+                            game.save_progress()
+
+                    # SELL
                     elif self.selected_owned is not None and self.sell_button.collidepoint(mouse_pos):
+                        
+                        game.stardust += player.weapons[self.selected_owned].cost * 0.3
                         player.weapons.pop(self.selected_owned)
                         player.current_weapon = self.selected_owned-1
                         self.selected_owned = None
+                        max_scroll_inventory = (owned_cell_size + owned_padding) * ((len(player.weapons) - 1) // 4)
+
+                        self.scroll_inventory_target = (owned_cell_size + owned_padding) * ((len(player.weapons) - 1) // 4)
+                        game.save_progress()
+
+                    
 
             screen.fill(BLACK)
+
+            # Draw owned weapons section
+            for i in range(len(player.weapons)):
+                row = i // grid_cols
+                col = i % grid_cols
+                x = owned_padding + col * (owned_cell_size + owned_padding)
+                y = shop_section_height + owned_padding*2 + row * (owned_cell_size + owned_padding) - self.scroll_inventory
+                cell_rect = pygame.Rect(x, y, owned_cell_size, owned_cell_size)
+                
+                pygame.draw.rect(screen, colors['blue'][20], cell_rect)
+                
+                if i == self.selected_owned:
+                    pygame.draw.rect(screen, colors['blue'][10], cell_rect, 3)
+                elif cell_rect.collidepoint(mouse_pos):
+                    pygame.draw.rect(screen, colors['blue'][15], cell_rect, 3)
+                
+                weapon = player.weapons[i]
+                weapon_scaled = pygame.transform.scale(weapon.image_ori,
+                    (int(owned_cell_size * 0.8), int(owned_cell_size * 0.8)))
+                screen.blit(weapon_scaled,
+                    (x + owned_cell_size * 0.1, y + owned_cell_size * 0.1))
+            
+            # Draw owned section title
+            draw_text("OWNED WEAPONS", owned_padding, 
+                        shop_section_height + owned_padding/2, color=colors['blue'][1])
             
             # Draw shop section
             shop_surface = pygame.Surface((self.left_panel_width, shop_section_height))
@@ -1947,7 +2204,7 @@ class WeaponShop:
                 row = i // grid_cols
                 col = i % grid_cols
                 x = cell_padding + col * (cell_size + cell_padding)
-                y = cell_padding + row * (cell_size + cell_padding) - scroll_y
+                y = cell_padding + row * (cell_size + cell_padding) - self.scroll_shop
                 
                 if -cell_size < y < shop_section_height:
                     cell_rect = pygame.Rect(x, y, cell_size, cell_size)
@@ -1974,35 +2231,12 @@ class WeaponShop:
                             (self.left_panel_width, 0),
                             (self.left_panel_width, height), 2)
             
-            for i in range(len(player.weapons)):
-                row = i // grid_cols
-                col = i % grid_cols
-                x = owned_padding + col * (owned_cell_size + owned_padding)
-                y = shop_section_height + owned_padding*2 + row * (owned_cell_size + owned_padding)
-                cell_rect = pygame.Rect(x, y, owned_cell_size, owned_cell_size)
-                
-                pygame.draw.rect(screen, colors['blue'][20], cell_rect)
-                
-                if i == self.selected_owned:
-                    pygame.draw.rect(screen, colors['blue'][10], cell_rect, 3)
-                elif cell_rect.collidepoint(mouse_pos):
-                    pygame.draw.rect(screen, colors['blue'][15], cell_rect, 3)
-                
-                weapon = player.weapons[i]
-                weapon_scaled = pygame.transform.scale(weapon.image_raw,
-                    (int(owned_cell_size * 0.8), int(owned_cell_size * 0.8)))
-                screen.blit(weapon_scaled,
-                    (x + owned_cell_size * 0.1, y + owned_cell_size * 0.1))
-            
-            # Draw owned section
-            draw_text("OWNED WEAPONS", owned_padding, 
-                        shop_section_height + owned_padding/2, color=colors['blue'][1])
             
             # Draw right panel info
             if self.choice is not None:
                 selected_weapon = self.weapons_d[self.choice]
                 preview_size = height * 0.3
-                weapon_preview = pygame.transform.scale(selected_weapon.image_raw, 
+                weapon_preview = pygame.transform.scale(selected_weapon.image_ori, 
                                                         (preview_size, preview_size))
                 screen.blit(weapon_preview, (self.right_panel_x, height * 0.1))
                 
@@ -2011,14 +2245,22 @@ class WeaponShop:
                 draw_text(f"Reload: {selected_weapon.reset_time}s", self.right_panel_x, height * 0.5 + 80)
                 draw_text(f"Magazine: {selected_weapon.capacity}", self.right_panel_x, height * 0.5 + 120)
                 
+                
+                # Buy button with hover effect
                 self.buy_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
-                pygame.draw.rect(screen, colors['green'][20],self.buy_button)
-                draw_text('BUY', self.right_panel_x + 70, height * 0.81)
+                button_color = colors['green'][21] if self.buy_button.collidepoint(mouse_pos) else colors['green'][20]
+                pygame.draw.rect(screen, button_color, self.buy_button)
+                # Calculate the center of the button
+                button_center_x = self.buy_button.x + self.buy_button.width // 2
+                button_center_y = self.buy_button.y + self.buy_button.height // 2
+                draw_text_centered('BUY', button_center_x, button_center_y)
+
+                draw_text(f"Cost: {selected_weapon.cost} Stardust", self.right_panel_x, self.buy_button.y - self.buy_button.height // 2 - 30)
                 
             elif self.selected_owned is not None:
                 selected_weapon = player.weapons[self.selected_owned]
                 preview_size = height * 0.3
-                weapon_preview = pygame.transform.scale(selected_weapon.image_raw, 
+                weapon_preview = pygame.transform.scale(selected_weapon.image_ori, 
                                                         (preview_size, preview_size))
                 screen.blit(weapon_preview, (self.right_panel_x, height * 0.1))
                 
@@ -2026,10 +2268,20 @@ class WeaponShop:
                 draw_text(f"Damage: {selected_weapon.damage}", self.right_panel_x, height * 0.5 + 40)
                 draw_text(f"Reload: {selected_weapon.reset_time}s", self.right_panel_x, height * 0.5 + 80)
                 draw_text(f"Magazine: {selected_weapon.capacity}", self.right_panel_x, height * 0.5 + 120)
+
                 
+                # Sell button with hover effect
                 self.sell_button = pygame.Rect(self.right_panel_x, height * 0.8, 200, 50)
-                pygame.draw.rect(screen, colors['red'][20], self.sell_button)
-                draw_text('SELL', self.right_panel_x + 70, height * 0.81)
+                button_color = colors['red'][21] if self.sell_button.collidepoint(mouse_pos) else colors['red'][20]
+                pygame.draw.rect(screen, button_color, self.sell_button)
+                # Calculate the center of the button
+                button_center_x = self.sell_button.x + self.sell_button.width // 2
+                button_center_y = self.sell_button.y + self.sell_button.height // 2
+                draw_text_centered('SELL', button_center_x, button_center_y)
+
+                draw_text(f"Sell for {selected_weapon.cost * 0.3} Stardust", self.right_panel_x, self.buy_button.y - self.buy_button.height // 2 - 30)
+            
+            draw_text(f"Stardust: {int(game.stardust)}", self.right_panel_x, height * 0.1)
             
             draw_circle(mouse_pos)
             pygame.display.update()
@@ -2828,8 +3080,8 @@ while True:
     raw_mouse_pos = pygame.mouse.get_pos()
     mouse_pos = list(raw_mouse_pos)
 
-    # Find closest enemy within snap radius
-    closest_enemy = None
+    # Find closest entity within snap radius
+    closest_entity = None
     closest_dist = SNAP_RADIUS
 
     # snap function freezed
@@ -2840,12 +3092,12 @@ while True:
             
             if dist < closest_dist:
                 closest_dist = dist
-                closest_enemy = screen_pos
+                closest_entity = screen_pos
 
-    # Smoothly snap cursor to enemy if one is found
-    if closest_enemy is not None:
-        mouse_pos[0] += (closest_enemy[0] - mouse_pos[0]) * SNAP_SPEED
-        mouse_pos[1] += (closest_enemy[1] + 100 - mouse_pos[1]) * SNAP_SPEED"""
+    # Smoothly snap cursor to entity if one is found
+    if closest_entity is not None:
+        mouse_pos[0] += (closest_entity[0] - mouse_pos[0]) * SNAP_SPEED
+        mouse_pos[1] += (closest_entity[1] + 100 - mouse_pos[1]) * SNAP_SPEED"""
     
 
     # Event handling
